@@ -427,7 +427,8 @@ def main(stdscr):
     renderer.clear()
     print("全てのファイルの表示を終了しました。")
 
-if __name__ == "__main__":
+def main_cli():
+    """Command line entry point for package installation"""
     def signal_handler(sig, frame):
         sys.exit(0)
 
@@ -448,3 +449,6 @@ if __name__ == "__main__":
         sys.stdout.write('\x1b[?1000l\x1b[?1006l\x1b[?25h')
         sys.stdout.write('\033[?25h')
         sys.stdout.flush()
+
+if __name__ == "__main__":
+    main_cli()

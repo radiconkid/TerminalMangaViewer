@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terma"
+version = "0.1.0"
+description = "Terminal manga viewer for Kitty and WezTerm"
+authors = [{ name = "radiconkid", email = "your.email@example.com" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "Pillow>=9.0.0; extra == 'full'",
+]
+
+[project.urls]
+Homepage = "https://github.com/radiconkid/TerminalMangaViewer"
+Repository = "https://github.com/radiconkid/TerminalMangaViewer"
+
+[project.scripts]
+terma = "terma:main_cli"
+
+[project.optional-dependencies]
+full = ["Pillow>=9.0.0"]
