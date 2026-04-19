@@ -16,6 +16,14 @@ Displays cover pages and spread (見開き) pages using native terminal image pr
 - Pillow がインストールされていればアスペクト比を正確に補正
 - `TERMA_DEBUG=1` でデバッグログ出力
 
+### サンプル画像
+
+![表紙表示](assets/sample-cover.jpg)
+*表紙ページは中央に表示されます*
+
+![見開き表示](assets/sample-spread.jpg)
+*2枚目以降は見開き（右綴じ）で表示されます*
+
 ---
 
 ## Requirements
