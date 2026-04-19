@@ -188,10 +188,10 @@ def main(stdscr):
     curses.mousemask(curses.ALL_MOUSE_EVENTS)
 
     # 引数チェック
-    if len(sys.argv) != 2:
-        return "Usage: terma.py <directory>"
-
-    initial_dir = Path(sys.argv[1]).resolve()
+    if len(sys.argv) > 1:
+        initial_dir = Path(sys.argv[1]).resolve()
+    else:
+        initial_dir = Path.cwd().resolve()
     dirs_to_browse = get_sorted_dirs(initial_dir)
     try:
         dir_idx = dirs_to_browse.index(initial_dir)
@@ -429,6 +429,26 @@ def main(stdscr):
 
 def main_cli():
     """Command line entry point for package installation"""
+    # ヘルプオプションの場合は curses を使用せずに直接表示
+    if len(sys.argv) > 1 and sys.argv[1] == "--help":
+        print("""TerMa - Terminal Manga Viewer
+
+Usage: terma [directory]
+
+Arguments:
+  directory    Manga directory to view (default: current directory)
+  --help       Show this help message
+
+Controls:
+  j/Left/Enter  Next page
+  k/l/Right     Previous page
+  0            First page (cover)
+  9            Last spread
+  ,            Next volume
+  .            Previous volume
+  q/Q/h        Quit""")
+        return
+
     def signal_handler(sig, frame):
         sys.exit(0)
 
