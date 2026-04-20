@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2024-04-20
+
+### Changed
+- Updated version to 0.2.2 in pyproject.toml and terma.py
+- Use absolute paths for image files in Kitty and WezTerm renderers
+- Improved directory navigation with better path resolution
+
+### Fixed
+- Path resolution issues in Kitty and WezTerm image rendering
+- Windows/ANSI terminal display escape code issues
+- Directory index lookup for initial directory selection
+
 ## [0.2.1] - 2024-04-20
 
 ### Added
