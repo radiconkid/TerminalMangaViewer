@@ -5,6 +5,11 @@ terma.py: Kitty または WezTerm で動作するマンガビューア
 操作: 1枚目は表紙、2枚目以降は見開き。j/Leftで進む、k/Rightで戻る、qで終了
 """
 
+# v0.2.0 変更点:
+# - Windows ネイティブ対応 (msvcrt + ANSI) により windows-curses 依存を排除
+# - コマンドライン実行時の ModuleNotFoundError を py-modules 指定で解決
+# - Windows での起動時に別ウィンドウが開く問題を subprocess フラグ調整で修正
+
 import os
 import sys
 import subprocess
@@ -13,6 +18,8 @@ import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
+
+__version__ = "0.2.0"
 
 if os.name != 'nt':
     import curses
