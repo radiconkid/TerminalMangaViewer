@@ -17,6 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "Pillow>=9.0.0; extra == 'full'",
+    "windows-curses>=2.4.2",
 ]
 
 [project.urls]
