@@ -73,7 +73,7 @@ class KittyRenderer(ImageRenderer):
         cmd = [
             "kitty", "+kitten", "icat", "--silent",
             "--place", f"{cover_width}x{img_height}@{cover_x_offset}x0",
-            str(image_path)
+            image_path.absolute().as_posix()
         ]
         debug("Command:", " ".join(cmd))
         subprocess.run(cmd, check=False, stdout=sys.__stdout__)
@@ -89,7 +89,7 @@ class KittyRenderer(ImageRenderer):
         cmd_r = [
             "kitty", "+kitten", "icat", "--silent",
             "--place", f"{img_width}x{img_height}@{right_x}x0",
-            str(img_right)
+            img_right.absolute().as_posix()
         ]
         debug("Command (R):", " ".join(cmd_r))
         subprocess.run(cmd_r, check=False, stdout=sys.__stdout__)
@@ -99,7 +99,7 @@ class KittyRenderer(ImageRenderer):
             cmd_l = [
                 "kitty", "+kitten", "icat", "--silent",
                 "--place", f"{img_width}x{img_height}@{margin}x0",
-                str(img_left)
+                img_left.absolute().as_posix()
             ]
             debug("Command (L):", " ".join(cmd_l))
             subprocess.run(cmd_l, check=False, stdout=sys.__stdout__)
@@ -134,9 +134,10 @@ class WezTermRenderer(ImageRenderer):
         env = os.environ.copy()
         env["COLUMNS"], env["LINES"] = str(term_width), str(term_height)
 
+        img_path_str = image_path.absolute().as_posix()
         cmd = [
             self.wezterm_bin, "imgcat", "--height", str(target_h),
-            "--position", f"{pos_x},0", str(image_path)
+            "--position", f"{pos_x},0", img_path_str
         ]
         debug("Command:", " ".join(cmd))
         subprocess.run(cmd, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
@@ -165,9 +166,12 @@ class WezTermRenderer(ImageRenderer):
             env = os.environ.copy()
             env["COLUMNS"], env["LINES"] = str(term_width), str(term_height)
 
+            img_l_str = img_left.absolute().as_posix()
+            img_r_str = img_right.absolute().as_posix()
+
             # WezTermは順番に描画
-            cmd_l = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_l},0", str(img_left)]
-            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_r},0", str(img_right)]
+            cmd_l = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_l},0", img_l_str]
+            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_r},0", img_r_str]
             debug("Command (L):", " ".join(cmd_l))
             subprocess.run(cmd_l, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
             debug("Command (R):", " ".join(cmd_r))
@@ -177,7 +181,8 @@ class WezTermRenderer(ImageRenderer):
             pos_r = max(0, (term_width - display_w_r) // 2)
             env = os.environ.copy()
             env["COLUMNS"], env["LINES"] = str(term_width), str(term_height)
-            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_r},0", str(img_right)]
+            img_r_str = img_right.absolute().as_posix()
+            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_r},0", img_r_str]
             debug("Command:", " ".join(cmd_r))
             subprocess.run(cmd_r, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
 
@@ -224,8 +229,8 @@ def run_app(stdscr=None):
             except curses.error:
                 pass
         else:
-            # Windows/ANSI: 反転色でステータス表示
-            sys.stdout.write(f"\033[{lines};1H\033[7m{text[:cols-1]:<{cols-1}}\033[0m")
+            # Windows/ANSI: ステータス表示
+            sys.stdout.write(f"\033[{lines};1H{text[:cols-1]:<{cols-1}}")
 
     def get_input():
         if stdscr:
@@ -277,13 +282,15 @@ def run_app(stdscr=None):
 
     # 引数チェック
     if len(sys.argv) > 1:
-        initial_dir = Path(sys.argv[1]).resolve()
+        initial_dir = Path(sys.argv[1]).absolute()
     else:
-        initial_dir = Path.cwd().resolve()
+        initial_dir = Path.cwd().absolute()
+
     dirs_to_browse = get_sorted_dirs(initial_dir)
     try:
-        dir_idx = dirs_to_browse.index(initial_dir)
-    except ValueError:
+        # パス比較をより確実に（正規化して比較）
+        dir_idx = next(i for i, d in enumerate(dirs_to_browse) if d.resolve() == initial_dir.resolve())
+    except (ValueError, StopIteration):
         dir_idx = 0
 
     img_idx = 0
