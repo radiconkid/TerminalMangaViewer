@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - 2024-04-20
+## [0.2.1] - 2024-04-20
 
 ### Added
 - Windows compatibility using msvcrt for terminal operations
@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 - CHANGELOG.md file
 
 ### Changed
-- Updated version to 0.2.0 in pyproject.toml and terma.py
+- Updated version to 0.2.1 in pyproject.toml and terma.py
 - Refactored terminal handling to support both curses (Unix) and msvcrt (Windows)
 - Improved error handling and terminal detection
 - Added debug statements throughout the codebase
@@ -21,6 +21,12 @@ All notable changes to this project will be documented in this file.
 - Windows terminal compatibility issues
 - Missing debug output for command execution
 - Terminal size detection on Windows
+
+## [0.2.0] - 2024-04-20
+
+### Added
+- Initial Windows support
+- Basic debug functionality
 
 ## [0.1.2] - 2024-04-10
 
