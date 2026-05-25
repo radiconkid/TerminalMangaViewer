@@ -2,7 +2,7 @@
 
 > **Ter**minal **Ma**nga Viewer — *"タマ"*
 
-Terminal manga viewer for **Kitty** and **WezTerm**.  
+Terminal manga viewer for **Kitty** and **WezTerm**.
 Displays cover pages and spread (見開き) pages using native terminal image protocols.
 
 ---
@@ -40,22 +40,61 @@ Displays cover pages and spread (見開き) pages using native terminal image pr
 
 ## Installation
 
+### 1. ソースコードを取得
+
 ```bash
 git clone https://github.com/radiconkid/TerminalMangaViewer.git
 cd TerminalMangaViewer
-
-# Pillow（オプション）
-pip install pillow
-
-# 実行権限を付与
-chmod +x terma.py
 ```
 
-### pipx でインストールする場合（任意）
+### 2. そのまま実行する場合
+
+```bash
+python3 terma.py /path/to/manga/volume01
+```
+
+### 3. pipx でインストールする場合
 
 ```bash
 pipx install .
 ```
+
+#### pipx で入れたときの更新方法
+
+```bash
+pipx upgrade terma
+```
+
+#### pipx で入れたものを再インストールする場合
+
+```bash
+pipx reinstall terma
+```
+
+#### 単純にローカルの変更を反映したい場合
+
+```bash
+pipx install . --force
+```
+
+### 4. 見開き/単ページの判定を正確にしたい場合
+
+横長画像の判定は Pillow があると正確になります。pipx でインストールした場合は、Pillow を別途入れると、ローカル実行の挙動に揃えやすくなります。
+
+```bash
+pipx install .[full]
+```
+
+もし既に pipx 側に入っている場合は、次のように Pillow を注入できます。
+
+```bash
+pipx inject terma Pillow
+```
+
+#### 参考: Pillow を入れない場合の違い
+
+- `python3 terma.py ...` では Pillow がある環境なら実画像のアスペクト比で判定されます
+- `pipx` 経由では、Pillow がないとフォールバックの既定値を使うため、横長ページが見開き扱いになることがあります
 
 ---
 

@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.2] - 2024-04-20
+## [0.2.3] - 2026-05-25
+
+### Changed
+- Added landscape-page detection so wide pages are shown as single-page displays instead of spreads
+- Unified navigation step size so page movement matches the current display mode
+- Updated display status text to reflect single-page rendering
+
+### Fixed
+- Inconsistent spread/single behavior when the current or next page was landscape-oriented
+- Pipx-installed execution now matches local `python3 terma.py` behavior when Pillow is available
+
+## [0.] - 2026-04-20
 
 ### Changed
 - Updated version to 0.2.2 in pyproject.toml and terma.py
@@ -14,7 +25,7 @@ All notable changes to this project will be documented in this file.
 - Windows/ANSI terminal display escape code issues
 - Directory index lookup for initial directory selection
 
-## [0.2.1] - 2024-04-20
+## [0.2.1] - 2026-04-20
 
 ### Added
 - Windows compatibility using msvcrt for terminal operations
@@ -34,13 +45,13 @@ All notable changes to this project will be documented in this file.
 - Missing debug output for command execution
 - Terminal size detection on Windows
 
-## [0.2.0] - 2024-04-20
+## [0.2.0] - 2026-04-20
 
 ### Added
 - Initial Windows support
 - Basic debug functionality
 
-## [0.1.2] - 2024-04-10
+## [0.1.2] - 2026-04-10
 
 ### Added
 - Package installation support with pyproject.toml
@@ -51,13 +62,13 @@ All notable changes to this project will be documented in this file.
 - Enhanced argument parsing
 - Improved error messages
 
-## [0.1.1] - 2024-04-09
+## [0.1.1] - 2026-04-09
 
 ### Added
 - Package installation support
 - pyproject.toml configuration
 
-## [0.1.0] - 2024-04-08
+## [0.1.0] - 2026-04-08
 
 ### Added
 - Initial implementation of TerMa v0.1.0

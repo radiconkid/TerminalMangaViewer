@@ -16,7 +16,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 if os.name != 'nt':
     import curses
 else:
@@ -40,10 +40,27 @@ def debug(*args):
     now = datetime.datetime.now().strftime("%H:%M:%S.%f")
     with open(LOG_FILE_PATH, "a") as f:
         f.write(f"[{now}] {' '.join(map(str, args))}\n")
+
+def get_image_aspect(path: Path) -> float:
+    try:
+        if Image:
+            with Image.open(path) as img:
+                return img.width / img.height
+    except Exception:
+        pass
+    return 0.7
+
+
+def is_landscape_image(path: Path) -> bool:
+    return get_image_aspect(path) > 1.0
+
+
 class ImageRenderer:
     def clear(self):
         pass
     def display_cover(self, image_path: Path, term_width: int, term_height: int):
+        pass
+    def display_single(self, image_path: Path, term_width: int, term_height: int):
         pass
     def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
         pass
@@ -54,6 +71,8 @@ class KittyRenderer(ImageRenderer):
         debug("Command:", " ".join(cmd))
         subprocess.run(cmd, check=False, stdout=sys.__stdout__)
     def display_cover(self, image_path: Path, term_width: int, term_height: int):
+        self.display_single(image_path, term_width, term_height)
+    def display_single(self, image_path: Path, term_width: int, term_height: int):
         img_height = max(1, term_height - 1)
         cover_width = term_width * 60 // 100
         cover_x_offset = term_width * 20 // 100
@@ -97,14 +116,10 @@ class WezTermRenderer(ImageRenderer):
         pass
         # もし wezterm imgcat --clear が使えるならそれを使う
     def _get_aspect(self, path: Path):
-        try:
-            if Image:
-                with Image.open(path) as img:
-                    return img.width / img.height
-        except:
-            pass
-        return 0.7  # デフォルトのアスペクト比（縦長）
+        return get_image_aspect(path)
     def display_cover(self, image_path: Path, term_width: int, term_height: int):
+        self.display_single(image_path, term_width, term_height)
+    def display_single(self, image_path: Path, term_width: int, term_height: int):
         target_h = max(1, term_height - 1)
         aspect = self._get_aspect(image_path)
         # セル比率2.2を考慮した幅計算
@@ -166,6 +181,22 @@ def get_sorted_images(target_dir: Path) -> List[Path]:
     extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
     images = [f for f in target_dir.iterdir() if f.is_file() and f.suffix.lower() in extensions]
     return sorted(images, key=natural_sort_key)
+
+
+def should_display_single(images: List[Path], current_idx: int) -> bool:
+    if current_idx <= 0:
+        return False
+    if current_idx == len(images) - 1:
+        return True
+    if is_landscape_image(images[current_idx]):
+        return True
+    return is_landscape_image(images[current_idx + 1])
+
+
+def get_display_step(images: List[Path], current_idx: int) -> int:
+    return 1 if should_display_single(images, current_idx) else 2
+
+
 def run_app(stdscr=None):
     """メインアプリケーションループ。stdscr があれば curses、なければ ANSI+msvcrt (Windows) を使用"""
     is_win = os.name == 'nt'
@@ -265,10 +296,12 @@ def run_app(stdscr=None):
         dir_idx = 0
     img_idx = 0
     needs_redraw = True
+    last_visited_dir = initial_dir
     while 0 <= dir_idx < len(dirs_to_browse):
         # フォルダ移動時は必ず再描画
         needs_redraw = True
         target_dir = dirs_to_browse[dir_idx]
+        last_visited_dir = target_dir
         images = get_sorted_images(target_dir)
         num_images = len(images)
         if not images:
@@ -282,9 +315,12 @@ def run_app(stdscr=None):
                 clear_screen()
                 h, w = get_term_size()
                 curr_right = images[img_idx]
-                curr_left = images[img_idx + 1] if img_idx + 1 < num_images and img_idx > 0 else None
+                use_single = should_display_single(images, img_idx)
+                curr_left = None if use_single else images[img_idx + 1] if img_idx + 1 < num_images and img_idx > 0 else None
                 if img_idx == 0:
                     status = f"DIR: {target_dir.name} | Cover: {curr_right.name}"
+                elif use_single:
+                    status = f"DIR: {target_dir.name} | Single: {curr_right.name}"
                 else:
                     l_name = curr_left.name if curr_left else "END"
                     status = f"DIR: {target_dir.name} | R: {curr_right.name} L: {l_name}"
@@ -296,6 +332,8 @@ def run_app(stdscr=None):
                 # renderer を使って画像を出力
                 if img_idx == 0:
                     renderer.display_cover(curr_right, w, h)
+                elif use_single:
+                    renderer.display_single(curr_right, w, h)
                 else:
                     renderer.display_spread(curr_right, curr_left, w, h)
                 needs_redraw = False
@@ -308,8 +346,9 @@ def run_app(stdscr=None):
             if stdscr and key == curses.KEY_RESIZE:
                 needs_redraw = True
                 continue
+            step = get_display_step(images, img_idx)
             if key in ('j', curses.KEY_LEFT if stdscr else 'KEY_LEFT', '\n', '\r'):
-                next_idx = img_idx + (1 if img_idx == 0 else 2)
+                next_idx = img_idx + (1 if img_idx == 0 else step)
                 if next_idx >= num_images:
                     if dir_idx < len(dirs_to_browse) - 1:
                         dir_idx += 1
@@ -325,7 +364,7 @@ def run_app(stdscr=None):
                         img_idx = -1
                         break
                 else:
-                    img_idx = max(0, img_idx - 2)
+                    img_idx = max(0, img_idx - step)
                 needs_redraw = True
             elif key == '0':
                 img_idx = 0
@@ -369,7 +408,7 @@ def run_app(stdscr=None):
                                     elif btn in (2, 34):  # 右クリック
                                         action = 'prev'
                                     elif btn in (1, 33):  # 中クリック -> 終了
-                                        return
+                                        return last_visited_dir
                         elif ch2 == 'M':  # X10形式
                             def decode_mouse_byte(value):
                                 if isinstance(value, int):
@@ -389,7 +428,7 @@ def run_app(stdscr=None):
                             elif btn == 2: # 右クリック押し下げ
                                 action = 'prev'
                             elif btn == 1: # 中クリック押し下げ -> 終了
-                                return
+                                return last_visited_dir
                         else:
                             # その他の CSI シーケンス (サイズ報告等) を最後まで読み捨てる
                             # 文字 (a-z, A-Z) または特定の終端文字が来るまで読む
@@ -409,12 +448,12 @@ def run_app(stdscr=None):
                     elif bstate & (curses.BUTTON3_CLICKED | curses.BUTTON3_PRESSED | curses.BUTTON3_RELEASED):
                         action = 'prev'
                     elif bstate & (curses.BUTTON2_CLICKED | curses.BUTTON2_PRESSED | curses.BUTTON2_RELEASED):
-                        return
+                        return last_visited_dir
                 except Exception as e:
                     debug(f"getmouse error: {e}")
             # アクションの実行とディレクトリ（巻）跨ぎ処理を一本化
             if action == 'next':
-                next_idx = img_idx + (1 if img_idx == 0 else 2)
+                next_idx = img_idx + (1 if img_idx == 0 else get_display_step(images, img_idx))
                 if next_idx >= num_images:
                     if dir_idx < len(dirs_to_browse) - 1:
                         dir_idx += 1
@@ -430,7 +469,7 @@ def run_app(stdscr=None):
                         img_idx = -1
                         break # 内側ループを抜けて前のディレクトリへ
                 else:
-                    img_idx = max(0, img_idx - 2)
+                    img_idx = max(0, img_idx - get_display_step(images, img_idx))
                 needs_redraw = True
             elif action == 'first':
                 img_idx = 0
