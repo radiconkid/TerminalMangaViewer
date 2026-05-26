@@ -4,8 +4,8 @@
 
 ## 日本語版
 
-Terminal manga viewer for **Kitty** and **WezTerm**.
-Cover pages are displayed in the center, and from the second page onward the viewer shows spreads in right-to-left reading order.
+Kitty と WezTerm 向けのターミナル漫画ビューアです。
+表紙は中央に表示され、2枚目以降は右綴じの見開き表示を行います。
 
 ### 特徴
 
