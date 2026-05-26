@@ -4,7 +4,7 @@
 
 ## 日本語版
 
-Terminal manga viewer for **Kitty** and **WezTerm**.  
+Terminal manga viewer for **Kitty** and **WezTerm**.
 Cover pages are displayed in the center, and from the second page onward the viewer shows spreads in right-to-left reading order.
 
 ### 特徴
@@ -18,10 +18,10 @@ Cover pages are displayed in the center, and from the second page onward the vie
 
 ### サンプル画像
 
-![表紙表示](assets/sample-cover.jpg)  
+![表紙表示](assets/sample-cover.jpg)
 *表紙ページは中央に表示されます*
 
-![見開き表示](assets/sample-spread.jpg)  
+![見開き表示](assets/sample-spread.jpg)
 *2枚目以降は見開き（右綴じ）で表示されます*
 
 ### 必要要件
@@ -48,7 +48,7 @@ python3 -m pip install Pillow
 python3 -m pip install .
 ```
 
-`pip install .` では Pillow が標準で入るため、通常はこの手順で十分です。  
+`pip install .` では Pillow が標準で入るため、通常はこの手順で十分です。
 `pipx install .` を使う場合も、Pillow は標準インストールとして含まれます。
 
 #### 3. そのまま実行する
@@ -93,7 +93,7 @@ manga/
 | `j` / `←` / `Enter` | 次のページへ |
 | `k` / `l` / `→` | 前のページへ |
 | `0` | 最初のページ（表紙）へ |
-| `9` | 最後の見開きへ |
+| `1`〜`9` | 全体の 10%〜90% の位置へ移動 |
 | `,` | 次の巻へ |
 | `.` | 前の巻へ |
 | `q` / `Q` / `h` | 終了 |
@@ -150,7 +150,7 @@ Issue・PR ともに歓迎します。
 
 ## English
 
-TerMa is a terminal manga viewer for **Kitty** and **WezTerm**.  
+TerMa is a terminal manga viewer for **Kitty** and **WezTerm**.
 It shows the cover page in the center and, from the second page onward, displays spreads in right-to-left reading order.
 
 ### Features
@@ -165,10 +165,10 @@ It shows the cover page in the center and, from the second page onward, displays
 
 ### Sample Images
 
-![Cover display](assets/sample-cover.jpg)  
+![Cover display](assets/sample-cover.jpg)
 *The cover page is shown in the center.*
 
-![Spread display](assets/sample-spread.jpg)  
+![Spread display](assets/sample-spread.jpg)
 *From the second page onward, the viewer shows spreads in right-to-left order.*
 
 ### Requirements
@@ -195,7 +195,7 @@ python3 -m pip install Pillow
 python3 -m pip install .
 ```
 
-`pip install .` installs Pillow by default, so this is usually sufficient.  
+`pip install .` installs Pillow by default, so this is usually sufficient.
 If you use `pipx install .`, Pillow is included as part of the standard install.
 
 #### 3. Run directly
@@ -240,7 +240,7 @@ manga/
 | `j` / `←` / `Enter` | Move to the next page |
 | `k` / `l` / `→` | Move to the previous page |
 | `0` | Jump to the first page (cover) |
-| `9` | Jump to the last spread |
+| `1`〜`9` | Jump to 10% through 90% progress |
 | `,` | Move to the next volume |
 | `.` | Move to the previous volume |
 | `q` / `Q` / `h` | Quit |

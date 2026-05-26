@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. / 本プロジェクトの重要な変更はこのファイルに記録します。
 
+## [0.3.0] - 2026-05-26
+
+### Added / 追加
+- Added progress shortcut support for direct jumps to 10% through 90% of the current volume / 現在の巻内で 10%〜90% へ直接移動できる進行ショートカットを追加
+- Added keyboard input normalization for curses so numeric keys are handled safely / curses 環境で数字キーが安全に処理されるように入力を正規化
+
+### Fixed / 修正
+- Fixed a crash when handling numeric shortcut input in curses mode / curses モードで数値ショートカット入力を処理した際のクラッシュを修正
+
 ## [0.2.3] - 2026-05-25
 
 ### Changed / 変更

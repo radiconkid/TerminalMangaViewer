@@ -16,7 +16,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
-__version__ = "0.2.3"
+__version__ = "0.3.0"
 if os.name != 'nt':
     import curses
 else:
@@ -197,6 +197,13 @@ def get_display_step(images: List[Path], current_idx: int) -> int:
     return 1 if should_display_single(images, current_idx) else 2
 
 
+def get_progress_index(total_images: int, percent: int) -> int:
+    if total_images <= 1:
+        return 0
+    target = int((total_images * (percent / 100)) - 1 + 0.5)
+    return max(0, min(total_images - 1, target))
+
+
 def run_app(stdscr=None):
     """メインアプリケーションループ。stdscr があれば curses、なければ ANSI+msvcrt (Windows) を使用"""
     is_win = os.name == 'nt'
@@ -225,12 +232,17 @@ def run_app(stdscr=None):
         else:
             # Windows/ANSI: ステータス表示
             sys.stdout.write(f"\033[{lines};1H{text[:cols-1]:<{cols-1}}")
+    def normalize_key(key):
+        if isinstance(key, int) and 32 <= key <= 126:
+            return chr(key)
+        return key
+
     def get_input(timeout_ms=-1):
         if stdscr:
             if timeout_ms >= 0: stdscr.timeout(timeout_ms)
             else: stdscr.timeout(-1)
             try:
-                return stdscr.get_wch()
+                return normalize_key(stdscr.get_wch())
             except curses.error:
                 return None
         else:
@@ -369,8 +381,9 @@ def run_app(stdscr=None):
             elif key == '0':
                 img_idx = 0
                 needs_redraw = True
-            elif key == '9':
-                img_idx = num_images - 2 + (num_images % 2) if num_images > 1 else 0
+            elif key in '123456789':
+                percent = int(key) * 10
+                img_idx = get_progress_index(num_images, percent)
                 needs_redraw = True
             elif key == ',':
                 if dir_idx < len(dirs_to_browse) - 1:
@@ -505,7 +518,7 @@ Controls:
   j/Left/Enter  Next page
   k/l/Right     Previous page
   0            First page (cover)
-  9            Last spread
+  1-9          Jump to 10%-90% progress
   ,            Next volume
   .            Previous volume
   q/Q/h        Quit""")
