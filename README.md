@@ -2,120 +2,91 @@
 
 > **Ter**minal **Ma**nga Viewer — *"タマ"*
 
-Terminal manga viewer for **Kitty** and **WezTerm**.
-Displays cover pages and spread (見開き) pages using native terminal image protocols.
+## 日本語版
 
----
+Terminal manga viewer for **Kitty** and **WezTerm**.  
+Cover pages are displayed in the center, and from the second page onward the viewer shows spreads in right-to-left reading order.
 
-## Features
+### 特徴
 
-- 1枚目は表紙として中央表示、2枚目以降は見開き（右綴じ）で表示
-- Kitty（icat）または WezTerm（imgcat）を自動検出して切り替え
-- キーボード主体の操作、マウスクリックにも対応
-- 兄弟ディレクトリを巻として自然順ソートでブラウズ
-- Pillow がインストールされていればアスペクト比を正確に補正
-- `TERMA_DEBUG=1` でデバッグログ出力
+- 1枚目は表紙として中央表示し、2枚目以降は右綴じの見開き表示を行います
+- Kitty か WezTerm を自動検出して、対応する画像プロトコルを切り替えます
+- キーボード主体の操作に加え、マウスクリックにも対応します
+- 兄弟ディレクトリを自然順で辿って、次の巻へ移動できます
+- Pillow を入れると、画像の縦横比を正確に判定して表示を安定させます
+- `TERMA_DEBUG=1` でデバッグログを有効化できます
 
 ### サンプル画像
 
-![表紙表示](assets/sample-cover.jpg)
+![表紙表示](assets/sample-cover.jpg)  
 *表紙ページは中央に表示されます*
 
-![見開き表示](assets/sample-spread.jpg)
+![見開き表示](assets/sample-spread.jpg)  
 *2枚目以降は見開き（右綴じ）で表示されます*
 
----
+### 必要要件
 
-## Requirements
-
-| 要件 | 備考 |
+| 項目 | 内容 |
 |------|------|
-| Python 3.8+ | 標準ライブラリのみで動作（Pillow はオプション） |
-| Kitty または WezTerm | どちらか一方があれば動作 |
-| Pillow | オプション。アスペクト比補正に使用 |
+| Python | 3.8 以上 |
+| ターミナル | Kitty または WezTerm |
+| Pillow | **強く推奨・標準インストール**。画像のアスペクト比を正確に判定します |
 
-推奨フォント: **HackGen Console NF**
+### インストール
 
----
-
-## Installation
-
-### 1. ソースコードを取得
+#### 1. ソースコードを取得する
 
 ```bash
 git clone https://github.com/radiconkid/TerminalMangaViewer.git
 cd TerminalMangaViewer
 ```
 
-### 2. そのまま実行する場合
+#### 2. 標準インストールを行う
+
+```bash
+python3 -m pip install Pillow
+python3 -m pip install .
+```
+
+`pip install .` では Pillow が標準で入るため、通常はこの手順で十分です。  
+`pipx install .` を使う場合も、Pillow は標準インストールとして含まれます。
+
+#### 3. そのまま実行する
 
 ```bash
 python3 terma.py /path/to/manga/volume01
 ```
 
-### 3. pipx でインストールする場合
+#### 4. pipx でインストールする
 
 ```bash
 pipx install .
 ```
 
-#### pipx で入れたときの更新方法
+#### 5. pipx の更新・再インストール
 
 ```bash
 pipx upgrade terma
-```
-
-#### pipx で入れたものを再インストールする場合
-
-```bash
 pipx reinstall terma
-```
-
-#### 単純にローカルの変更を反映したい場合
-
-```bash
 pipx install . --force
 ```
 
-### 4. 見開き/単ページの判定を正確にしたい場合
-
-横長画像の判定は Pillow があると正確になります。pipx でインストールした場合は、Pillow を別途入れると、ローカル実行の挙動に揃えやすくなります。
-
-```bash
-pipx install .[full]
-```
-
-もし既に pipx 側に入っている場合は、次のように Pillow を注入できます。
-
-```bash
-pipx inject terma Pillow
-```
-
-#### 参考: Pillow を入れない場合の違い
-
-- `python3 terma.py ...` では Pillow がある環境なら実画像のアスペクト比で判定されます
-- `pipx` 経由では、Pillow がないとフォールバックの既定値を使うため、横長ページが見開き扱いになることがあります
-
----
-
-## Usage
+### 使い方
 
 ```bash
 ./terma.py /path/to/manga/volume01
 ```
 
-`volume01` と同階層にある兄弟ディレクトリが自動的に次の巻として認識されます。
+`volume01` と同階層にある兄弟ディレクトリが、自動的に次の巻として認識されます。
 
-```
+```text
 manga/
 ├── volume01/   ← ここを指定すると…
 ├── volume02/   ← 次の巻として自動認識
 └── volume03/
 ```
 
----
-
-## Key Bindings
+### キーバインド
 
 | キー | 動作 |
 |------|------|
@@ -137,9 +108,7 @@ manga/
 | 右クリック | 前のページへ |
 | 中クリック | 終了 |
 
----
-
-## Terminal Support
+### ターミナル対応
 
 | ターミナル | プロトコル | 検出方法 |
 |------------|-----------|---------|
@@ -148,9 +117,7 @@ manga/
 
 tmux 経由でも環境変数による判定が有効です。
 
----
-
-## Debug
+### デバッグ
 
 ```bash
 MANGA_VIEWER_DEBUG=1 ./terma.py /path/to/manga/volume01
@@ -158,29 +125,170 @@ MANGA_VIEWER_DEBUG=1 ./terma.py /path/to/manga/volume01
 
 ログは `~/terma-debug.log` に出力されます。
 
----
+### プロジェクト構成
 
-## Project Structure
-
-```
+```text
 TerminalMangaViewer/
-├── terma.py   # メインスクリプト
-├── requirements.txt      # Pillow（optional）
+├── terma.py
+├── pyproject.toml
 ├── README.md
 └── LICENSE
 ```
 
----
-
-## Contributing
+### コントリビューション
 
 Issue・PR ともに歓迎します。
 
 - バグ報告の際は OS・ターミナル名・バージョン・デバッグログを添えてください
 - 機能追加の提案は Issue で先に議論していただけると助かります
 
+### ライセンス
+
+[MIT](LICENSE)
+
 ---
 
-## License
+## English
+
+TerMa is a terminal manga viewer for **Kitty** and **WezTerm**.  
+It shows the cover page in the center and, from the second page onward, displays spreads in right-to-left reading order.
+
+### Features
+
+- The first page is shown as a centered cover page.
+- From the second page onward, the viewer displays spreads using a right-bound layout.
+- Kitty and WezTerm are detected automatically, and the corresponding image protocol is selected.
+- The application is keyboard-first and also supports mouse clicks.
+- Sibling directories are traversed in natural sort order so the next volume is discovered automatically.
+- Installing Pillow improves aspect-ratio detection and makes layout behavior more reliable.
+- `TERMA_DEBUG=1` enables debug logging.
+
+### Sample Images
+
+![Cover display](assets/sample-cover.jpg)  
+*The cover page is shown in the center.*
+
+![Spread display](assets/sample-spread.jpg)  
+*From the second page onward, the viewer shows spreads in right-to-left order.*
+
+### Requirements
+
+| Item | Details |
+|------|---------|
+| Python | 3.8 or newer |
+| Terminal | Kitty or WezTerm |
+| Pillow | **Strongly recommended and installed by default** for accurate aspect-ratio detection |
+
+### Installation
+
+#### 1. Clone the repository
+
+```bash
+git clone https://github.com/radiconkid/TerminalMangaViewer.git
+cd TerminalMangaViewer
+```
+
+#### 2. Use the standard install
+
+```bash
+python3 -m pip install Pillow
+python3 -m pip install .
+```
+
+`pip install .` installs Pillow by default, so this is usually sufficient.  
+If you use `pipx install .`, Pillow is included as part of the standard install.
+
+#### 3. Run directly
+
+```bash
+python3 terma.py /path/to/manga/volume01
+```
+
+#### 4. Install with pipx
+
+```bash
+pipx install .
+```
+
+#### 5. Upgrade or reinstall with pipx
+
+```bash
+pipx upgrade terma
+pipx reinstall terma
+pipx install . --force
+```
+
+### Usage
+
+```bash
+./terma.py /path/to/manga/volume01
+```
+
+Sibling directories next to `volume01` are automatically detected as the next volume.
+
+```text
+manga/
+├── volume01/   ← start here
+├── volume02/   ← automatically recognized as the next volume
+└── volume03/
+```
+
+### Key Bindings
+
+| Key | Action |
+|------|--------|
+| `j` / `←` / `Enter` | Move to the next page |
+| `k` / `l` / `→` | Move to the previous page |
+| `0` | Jump to the first page (cover) |
+| `9` | Jump to the last spread |
+| `,` | Move to the next volume |
+| `.` | Move to the previous volume |
+| `q` / `Q` / `h` | Quit |
+
+### Mouse Controls
+
+> ⚠️ Mouse support is still incomplete and can be unreliable.
+
+| Action | Behavior |
+|--------|----------|
+| Left click | Move to the next page |
+| Right click | Move to the previous page |
+| Middle click | Quit |
+
+### Terminal Support
+
+| Terminal | Protocol | Detection |
+|----------|----------|-----------|
+| Kitty | Kitty Graphics Protocol (`icat`) | `KITTY_WINDOW_ID` environment variable |
+| WezTerm | imgcat | `WEZTERM_PANE` environment variable |
+
+The environment variables above also work when the app is launched from tmux.
+
+### Debug
+
+```bash
+MANGA_VIEWER_DEBUG=1 ./terma.py /path/to/manga/volume01
+```
+
+Logs are written to `~/terma-debug.log`.
+
+### Project Structure
+
+```text
+TerminalMangaViewer/
+├── terma.py
+├── pyproject.toml
+├── README.md
+└── LICENSE
+```
+
+### Contributing
+
+Issues and pull requests are welcome.
+
+- Include your OS, terminal name, version, and debug log when reporting a bug.
+- Feature ideas are best discussed in an issue before implementation.
+
+### License
 
 [MIT](LICENSE)

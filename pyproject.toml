@@ -17,7 +17,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = ["Pillow>=9.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/radiconkid/TerminalMangaViewer"
@@ -25,9 +25,6 @@ Repository = "https://github.com/radiconkid/TerminalMangaViewer"
 
 [project.scripts]
 terma = "terma:main_cli"
-
-[project.optional-dependencies]
-full = ["Pillow>=9.0.0"]
 
 [tool.setuptools]
 py-modules = ["terma"]
