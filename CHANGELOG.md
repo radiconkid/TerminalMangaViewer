@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. / 本プロジェクトの重要な変更はこのファイルに記録します。
 
+## [0.3.2] - 2026-05-26
+
+### Changed / 変更
+- Centralized Turbo Mode page jump count management / ターボモードのジャンプページ数を一括管理できるように変更
+
+## [0.3.1] - 2026-05-26
+
+### Added / 追加
+- Added Turbo Mode for fast navigation (10 pages jump) using Shift + Arrow keys or J/K keys / Shift + 矢印キーまたは J/K キーによる高速移動（10ページジャンプ）のターボモードを追加
+- Updated help message and documentation / ヘルプメッセージとドキュメントを更新
+
 ## [0.3.0] - 2026-05-26
 
 ### Added / 追加

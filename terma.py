@@ -16,7 +16,8 @@ import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
-__version__ = "0.3.0"
+__version__ = "0.3.2"
+TURBO_STEP = 10
 if os.name != 'nt':
     import curses
 else:
@@ -262,6 +263,8 @@ def run_app(stdscr=None):
                 if ext == b'M': return 'KEY_RIGHT'
                 if ext == b'H': return 'KEY_UP'
                 if ext == b'P': return 'KEY_DOWN'
+                if ext == b's': return 'KEY_SLEFT'  # Shift + Left
+                if ext == b't': return 'KEY_SRIGHT' # Shift + Right
                 return None
             if ch == b'\r' or ch == b'\n': return '\n'
             if ch == b'\x1b': return '\x1b'
@@ -369,6 +372,10 @@ def run_app(stdscr=None):
                 else:
                     img_idx = next_idx
                 needs_redraw = True
+            elif key in ('J', curses.KEY_SLEFT if stdscr else 'KEY_SLEFT'):
+                # Turbo next: Jump TURBO_STEP pages
+                img_idx = min(num_images - 1, img_idx + TURBO_STEP)
+                needs_redraw = True
             elif key in ('k', 'l', curses.KEY_RIGHT if stdscr else 'KEY_RIGHT'):
                 if img_idx == 0:
                     if dir_idx > 0:
@@ -378,10 +385,14 @@ def run_app(stdscr=None):
                 else:
                     img_idx = max(0, img_idx - step)
                 needs_redraw = True
+            elif key in ('K', 'L', curses.KEY_SRIGHT if stdscr else 'KEY_SRIGHT'):
+                # Turbo prev: Jump TURBO_STEP pages back
+                img_idx = max(0, img_idx - TURBO_STEP)
+                needs_redraw = True
             elif key == '0':
                 img_idx = 0
                 needs_redraw = True
-            elif key in '123456789':
+            elif key in ('1', '2', '3', '4', '5', '6', '7', '8', '9'):
                 percent = int(key) * 10
                 img_idx = get_progress_index(num_images, percent)
                 needs_redraw = True
@@ -410,7 +421,7 @@ def run_app(stdscr=None):
                                 c = get_input(timeout_ms=40)
                                 if c is None: break
                                 seq += str(c)
-                                if c in "Mm": break
+                                if c in ('M', 'm'): break
                             debug(f"SGR Mouse: \\x1b[{seq}")
                             m = re.match(r'<(\d+);(\d+);(\d+)([Mm])', seq)
                             if m:
@@ -445,7 +456,7 @@ def run_app(stdscr=None):
                         else:
                             # その他の CSI シーケンス (サイズ報告等) を最後まで読み捨てる
                             # 文字 (a-z, A-Z) または特定の終端文字が来るまで読む
-                            while not ('a' <= str(ch2) <= 'z' or 'A' <= str(ch2) <= 'Z' or ch2 in '@^~'):
+                            while not ('a' <= str(ch2) <= 'z' or 'A' <= str(ch2) <= 'Z' or ch2 in ('@', '^', '~')):
                                 ch2 = stdscr.get_wch()
                     # バッファの掃除
                     while get_input(timeout_ms=0) is not None: pass
@@ -509,7 +520,7 @@ def main_cli():
     """Command line entry point for package installation"""
     # ヘルプオプションの場合は curses を使用せずに直接表示
     if len(sys.argv) > 1 and sys.argv[1] == "--help":
-        print("""TerMa - Terminal Manga Viewer
+        print(f"""TerMa - Terminal Manga Viewer
 Usage: terma [directory]
 Arguments:
   directory    Manga directory to view (default: current directory)
@@ -517,6 +528,8 @@ Arguments:
 Controls:
   j/Left/Enter  Next page
   k/l/Right     Previous page
+  J/Shift+Left  Turbo Next ({TURBO_STEP} pages)
+  K/Shift+Right Turbo Previous ({TURBO_STEP} pages)
   0            First page (cover)
   1-9          Jump to 10%-90% progress
   ,            Next volume

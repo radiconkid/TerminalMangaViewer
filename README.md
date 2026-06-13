@@ -95,6 +95,8 @@ manga/
 | `j` / `←` / `Enter` | 次のページへ |
 | `k` / `l` / `→` | 前のページへ |
 | `0` | 最初のページ（表紙）へ |
+| `J` / `Shift` + `←` | 10ページ進む（ターボ） |
+| `K` / `Shift` + `→` | 10ページ戻る（ターボ） |
 | `1`〜`9` | 全体の 10%〜90% の位置へ移動 |
 | `,` | 次の巻へ |
 | `.` | 前の巻へ |
@@ -242,6 +244,8 @@ manga/
 | `j` / `←` / `Enter` | Move to the next page |
 | `k` / `l` / `→` | Move to the previous page |
 | `0` | Jump to the first page (cover) |
+| `J` / `Shift` + `←` | Move forward 10 pages (Turbo) |
+| `K` / `Shift` + `→` | Move backward 10 pages (Turbo) |
 | `1`〜`9` | Jump to 10% through 90% progress |
 | `,` | Move to the next volume |
 | `.` | Move to the previous volume |
