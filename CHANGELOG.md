@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. / 本プロジェクトの重要な変更はこのファイルに記録します。
 
+## [0.4.1] - 2026-06-22
+
+### Added / 追加
+- Added RAR and CBR archive support. The application will detect RAR archives and extract them using `unrar` or `7z` system utilities if available. / RARおよびCBRアーカイブファイルの閲覧に対応しました。システム上の `unrar` または `7z` コマンドを用いて自動的に一時ディレクトリへ展開・表示します。
+
+## [0.4.0] - 2026-06-22
+
+### Added / 追加
+- Support directly passing ZIP/CBZ or TAR archives as command-line arguments. The application automatically unpacks them to a temporary directory, flattens single subdirectories, registers image-containing folders, and cleans up the temporary files on exit. / ZIP/CBZやTARアーカイブファイルをコマンドライン引数として直接渡す機能を追加しました。アプリケーションが自動的に一時ディレクトリへ展開し、画像が含まれるフォルダを登録・表示したのち、終了時に自動で一時ファイルをクリーンアップします。
+
 ## [0.3.3] - 2026-06-22
 
 ### Changed / 変更

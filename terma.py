@@ -1,22 +1,16 @@
 #!/usr/bin/env python3
-"""
-terma.py: Kitty または WezTerm で動作するマンガビューア
-使用法: ./terma.py <ディレクトリパス>
-操作: 1枚目は表紙、2枚目以降は見開き。j/Leftで進む、k/Rightで戻る、qで終了
-"""
-# v0.2.0 変更点:
-# - Windows ネイティブ対応 (msvcrt + ANSI) により windows-curses 依存を排除
-# - コマンドライン実行時の ModuleNotFoundError を py-modules 指定で解決
-# - Windows での起動時に別ウィンドウが開く問題を subprocess フラグ調整で修正
 import os
 import sys
 import subprocess
 import signal
 import re
 import shutil
+import zipfile
+import tarfile
+import tempfile
 from pathlib import Path
 from typing import List, Optional
-__version__ = "0.3.3"
+__version__ = "0.4.1"
 TURBO_STEP = 10
 if os.name != 'nt':
     import curses
@@ -184,6 +178,56 @@ def get_sorted_images(target_dir: Path) -> List[Path]:
     return sorted(images, key=natural_sort_key)
 
 
+def extract_archive(archive_path: Path, extract_to: Path) -> bool:
+    # ZIP / CBZ
+    try:
+        if zipfile.is_zipfile(archive_path):
+            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_to)
+            return True
+    except Exception:
+        pass
+
+    # RAR / CBR
+    try:
+        is_rar = archive_path.suffix.lower() in ('.rar', '.cbr')
+        if not is_rar:
+            try:
+                with open(archive_path, 'rb') as f:
+                    is_rar = f.read(7).startswith(b'Rar!\x1a\x07')
+            except Exception:
+                pass
+        if is_rar:
+            # unrar を試す
+            unrar_path = shutil.which("unrar")
+            if unrar_path:
+                res = subprocess.run([unrar_path, "x", "-y", archive_path.absolute().as_posix(), extract_to.absolute().as_posix() + "/"],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                if res.returncode == 0:
+                    return True
+            # 7z を試す
+            sevenz_path = shutil.which("7z") or shutil.which("7za")
+            if sevenz_path:
+                res = subprocess.run([sevenz_path, "x", "-y", f"-o{extract_to.absolute().as_posix()}", archive_path.absolute().as_posix()],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                if res.returncode == 0:
+                    return True
+    except Exception:
+        pass
+
+    # TAR
+    try:
+        if tarfile.is_tarfile(archive_path):
+            with tarfile.open(archive_path, 'r:*') as tar_ref:
+                tar_ref.extractall(extract_to)
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+
 def should_display_single(images: List[Path], current_idx: int) -> bool:
     if current_idx <= 0:
         return False
@@ -218,7 +262,7 @@ def get_progress_index(total_images: int, percent: int) -> int:
     return max(0, min(total_images - 1, target))
 
 
-def run_app(stdscr=None):
+def run_app(stdscr=None, target_path: Optional[Path] = None, is_archive: bool = False):
     """メインアプリケーションループ。stdscr があれば curses、なければ ANSI+msvcrt (Windows) を使用"""
     is_win = os.name == 'nt'
     def get_term_size():
@@ -312,11 +356,49 @@ def run_app(stdscr=None):
         # デフォルトをWezTermとする
         renderer = WezTermRenderer()
     # 引数チェック
-    if len(sys.argv) > 1:
+    if target_path:
+        initial_dir = target_path
+    elif len(sys.argv) > 1:
         initial_dir = Path(sys.argv[1]).absolute()
     else:
         initial_dir = Path.cwd().absolute()
-    dirs_to_browse = get_sorted_dirs(initial_dir)
+
+    if is_archive:
+        # フォルダが1つのサブフォルダのみを含む場合は自動で下る
+        while True:
+            try:
+                items = list(initial_dir.iterdir())
+                subdirs = [i for i in items if i.is_dir()]
+                files = [i for i in items if i.is_file()]
+                if len(subdirs) == 1 and len(files) == 0:
+                    initial_dir = subdirs[0]
+                else:
+                    break
+            except Exception:
+                break
+
+        # 画像を含むすべてのディレクトリを検索
+        extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
+        dirs_with_images = []
+        def has_images(d: Path) -> bool:
+            try:
+                return any(f.suffix.lower() in extensions for f in d.iterdir() if f.is_file())
+            except Exception:
+                return False
+
+        if has_images(initial_dir):
+            dirs_with_images.append(initial_dir)
+        for d in sorted(initial_dir.rglob('*'), key=natural_sort_key):
+            if d.is_dir() and has_images(d):
+                dirs_with_images.append(d)
+
+        if dirs_with_images:
+            dirs_to_browse = dirs_with_images
+        else:
+            dirs_to_browse = [initial_dir]
+    else:
+        dirs_to_browse = get_sorted_dirs(initial_dir)
+
     try:
         # パス比較をより確実に（正規化して比較）
         dir_idx = next(i for i, d in enumerate(dirs_to_browse) if d.resolve() == initial_dir.resolve())
@@ -515,10 +597,10 @@ def main_cli():
     # ヘルプオプションの場合は curses を使用せずに直接表示
     if len(sys.argv) > 1 and sys.argv[1] == "--help":
         print(f"""TerMa - Terminal Manga Viewer
-Usage: terma [directory]
+Usage: terma [directory_or_archive]
 Arguments:
-  directory    Manga directory to view (default: current directory)
-  --help       Show this help message
+  directory_or_archive    Manga directory or archive (zip/tar/cbz) to view (default: current directory)
+  --help                  Show this help message
 Controls:
   j/Left/Enter  Next page
   k/l/Right     Previous page
@@ -534,15 +616,35 @@ Controls:
         sys.exit(0)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+
+    if len(sys.argv) > 1:
+        target_path = Path(sys.argv[1]).absolute()
+    else:
+        target_path = Path.cwd().absolute()
+
+    temp_dir_obj = None
+    is_archive = False
+
     try:
+        if target_path.is_file():
+            temp_dir_obj = tempfile.TemporaryDirectory(prefix="terma_")
+            extracted_path = Path(temp_dir_obj.name)
+            if extract_archive(target_path, extracted_path):
+                target_path = extracted_path
+                is_archive = True
+            else:
+                print(f"Error: {target_path} is not a directory or a supported archive file.")
+                temp_dir_obj.cleanup()
+                return
+
         # 初期設定 (マウス有効化、カーソル非表示)
         sys.stdout.write('\x1b[?1000h\x1b[?1006h')
         sys.stdout.write('\033[?25l')
         sys.stdout.flush()
         if os.name == 'nt':
-            error_msg = run_app()
+            error_msg = run_app(target_path=target_path, is_archive=is_archive)
         else:
-            error_msg = curses.wrapper(run_app)
+            error_msg = curses.wrapper(lambda stdscr: run_app(stdscr, target_path=target_path, is_archive=is_archive))
         if error_msg:
             print(error_msg)
     finally:
@@ -550,5 +652,10 @@ Controls:
         sys.stdout.write('\x1b[?1000l\x1b[?1006l')
         sys.stdout.write('\033[?25h')
         sys.stdout.flush()
+        if temp_dir_obj:
+            try:
+                temp_dir_obj.cleanup()
+            except Exception:
+                pass
 if __name__ == "__main__":
     main_cli()
