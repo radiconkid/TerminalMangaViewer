@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. / 本プロジェクトの重要な変更はこのファイルに記録します。
 
+## [0.3.3] - 2026-06-22
+
+### Changed / 変更
+- Adjusted folder navigation behavior when going back from the first page: now moves to the first page of the previous folder instead of the last page. / 最初のページから戻るキーを押してフォルダ移動した際、前のフォルダの最後のページではなく最初のページを表示するように変更。
+- Robust ESC sequence parsing to prevent page jumping and image load failures over high-latency SSH connections. / SSH接続などの高遅延環境で、ESCシーケンスが断片化して誤動作する（ページが飛ぶ、画像が描画されない）問題を解決するため、ESCシーケンスの読取・解析処理を堅牢化。
+
+### Fixed / 修正
+- Fixed page-skipping/misalignment when navigating backwards through double-page spreads. / 見開き表示から戻るキーを押した際に、ステップ計算が狂って見開きページが崩れたりスキップされたりする不具合を修正。
+
 ## [0.3.2] - 2026-05-26
 
 ### Changed / 変更

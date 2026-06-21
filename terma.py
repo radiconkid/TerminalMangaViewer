@@ -16,7 +16,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 TURBO_STEP = 10
 if os.name != 'nt':
     import curses
@@ -196,6 +196,19 @@ def should_display_single(images: List[Path], current_idx: int) -> bool:
 
 def get_display_step(images: List[Path], current_idx: int) -> int:
     return 1 if should_display_single(images, current_idx) else 2
+
+
+def get_previous_page_index(images: List[Path], current_idx: int) -> int:
+    if current_idx <= 1:
+        return 0
+    idx = 1
+    slides = [0]
+    while idx < current_idx:
+        slides.append(idx)
+        step = get_display_step(images, idx)
+        idx += step
+    return slides[-1]
+
 
 
 def get_progress_index(total_images: int, percent: int) -> int:
@@ -380,10 +393,10 @@ def run_app(stdscr=None):
                 if img_idx == 0:
                     if dir_idx > 0:
                         dir_idx -= 1
-                        img_idx = -1
+                        img_idx = 0
                         break
                 else:
-                    img_idx = max(0, img_idx - step)
+                    img_idx = get_previous_page_index(images, img_idx)
                 needs_redraw = True
             elif key in ('K', 'L', curses.KEY_SRIGHT if stdscr else 'KEY_SRIGHT'):
                 # Turbo prev: Jump TURBO_STEP pages back
@@ -412,18 +425,23 @@ def run_app(stdscr=None):
                 return
             elif key == '\x1b': # ESC シーケンス (SGRマウス等の手動パース)
                 try:
-                    ch = get_input(timeout_ms=40)
+                    # SSH等の遅延を考慮し、timeoutを少し長めにする
+                    ch = get_input(timeout_ms=150)
                     if ch == '[':
-                        ch2 = get_input(timeout_ms=40)
-                        if ch2 == '<':  # SGR形式
-                            seq = "<"
-                            while True:
-                                c = get_input(timeout_ms=40)
-                                if c is None: break
-                                seq += str(c)
-                                if c in ('M', 'm'): break
-                            debug(f"SGR Mouse: \\x1b[{seq}")
-                            m = re.match(r'<(\d+);(\d+);(\d+)([Mm])', seq)
+                        # CSIシーケンスの読み込み
+                        seq = "["
+                        while True:
+                            c = get_input(timeout_ms=100)
+                            if c is None:
+                                break
+                            seq += str(c)
+                            # 終端文字 (英文字または '~') に達したら終了
+                            if isinstance(c, str) and (c.isalpha() or c == '~'):
+                                break
+                        debug(f"Read ESC sequence: \\x1b{seq}")
+                        # SGRマウスイベントのパース
+                        if seq.startswith("[<") and seq.endswith(('M', 'm')):
+                            m = re.match(r'\[<(\d+);(\d+);(\d+)([Mm])', seq)
                             if m:
                                 btn, mx, state = int(m.group(1)), int(m.group(2)), m.group(4)
                                 if state == "M":
@@ -433,35 +451,11 @@ def run_app(stdscr=None):
                                         action = 'prev'
                                     elif btn in (1, 33):  # 中クリック -> 終了
                                         return last_visited_dir
-                        elif ch2 == 'M':  # X10形式
-                            def decode_mouse_byte(value):
-                                if isinstance(value, int):
-                                    return value
-                                if isinstance(value, str) and len(value) == 1:
-                                    return ord(value)
-                                if isinstance(value, bytes) and len(value) == 1:
-                                    return value[0]
-                                raise ValueError(f"Unsupported mouse byte: {value!r}")
-                            b = stdscr.get_wch()
-                            x = stdscr.get_wch()
-                            y = stdscr.get_wch()
-                            btn = decode_mouse_byte(b) - 32
-                            mx = decode_mouse_byte(x) - 32
-                            if btn == 0: # 左クリック押し下げ
-                                action = 'next'
-                            elif btn == 2: # 右クリック押し下げ
-                                action = 'prev'
-                            elif btn == 1: # 中クリック押し下げ -> 終了
-                                return last_visited_dir
-                        else:
-                            # その他の CSI シーケンス (サイズ報告等) を最後まで読み捨てる
-                            # 文字 (a-z, A-Z) または特定の終端文字が来るまで読む
-                            while not ('a' <= str(ch2) <= 'z' or 'A' <= str(ch2) <= 'Z' or ch2 in ('@', '^', '~')):
-                                ch2 = stdscr.get_wch()
                     # バッファの掃除
-                    while get_input(timeout_ms=0) is not None: pass
-                except curses.error:
-                    pass
+                    while get_input(timeout_ms=0) is not None:
+                        pass
+                except Exception as e:
+                    debug(f"ESC parse error: {e}")
                 # continueを削除し、下のアクション実行へ流す
             elif stdscr and key == curses.KEY_MOUSE:
                 try:
@@ -490,10 +484,10 @@ def run_app(stdscr=None):
                 if img_idx == 0:
                     if dir_idx > 0:
                         dir_idx -= 1
-                        img_idx = -1
+                        img_idx = 0
                         break # 内側ループを抜けて前のディレクトリへ
                 else:
-                    img_idx = max(0, img_idx - get_display_step(images, img_idx))
+                    img_idx = get_previous_page_index(images, img_idx)
                 needs_redraw = True
             elif action == 'first':
                 img_idx = 0
