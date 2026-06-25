@@ -15,6 +15,7 @@ Kitty と WezTerm 向けのターミナル漫画ビューアです。
 - Kitty か WezTerm を自動検出して、対応する画像プロトコルを切り替えます
 - キーボード主体の操作に加え、マウスクリックにも対応します
 - 兄弟ディレクトリを自然順で辿って、次の巻へ移動できます
+- 通常フォルダとアーカイブの前回表示位置を自動で保存・復元します
 - Pillow を入れると、画像の縦横比を正確に判定して表示を安定させます
 - `TERMA_DEBUG=1` でデバッグログを有効化できます
 
@@ -87,6 +88,9 @@ manga/
 ├── volume02/   ← 次の巻として自動認識
 └── volume03/
 ```
+
+前回表示していた巻とページは自動的に保存され、同じフォルダまたはアーカイブを開くと続きから再開します。
+レジューム情報は `~/.terma_resume.json` に保存されます。
 
 ### キーバインド
 
@@ -164,6 +168,7 @@ It shows the cover page in the center and, from the second page onward, displays
 - Kitty and WezTerm are detected automatically, and the corresponding image protocol is selected.
 - The application is keyboard-first and also supports mouse clicks.
 - Sibling directories are traversed in natural sort order so the next volume is discovered automatically.
+- The last viewed position is saved and restored automatically for normal folders and archives.
 - Installing Pillow improves aspect-ratio detection and makes layout behavior more reliable.
 - `TERMA_DEBUG=1` enables debug logging.
 
@@ -236,6 +241,9 @@ manga/
 ├── volume02/   ← automatically recognized as the next volume
 └── volume03/
 ```
+
+The last viewed volume and page are saved automatically, so opening the same folder or archive resumes from that position.
+Resume data is stored in `~/.terma_resume.json`.
 
 ### Key Bindings
 

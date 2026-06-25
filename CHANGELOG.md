@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. / 本プロジェクトの重要な変更はこのファイルに記録します。
 
+## [0.5.0] - 2026-06-25
+
+### Added / 追加
+- Add automatic resume support for normal folders and archive files. / 通常フォルダとアーカイブファイルの前回表示位置を自動で保存・復元できるようにしました。
+
 ## [0.4.2] - 2026-06-22
 
 ### Added / 追加

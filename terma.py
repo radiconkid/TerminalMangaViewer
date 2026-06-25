@@ -8,9 +8,10 @@ import shutil
 import zipfile
 import tarfile
 import tempfile
+import json
 from pathlib import Path
-from typing import List, Optional
-__version__ = "0.4.2"
+from typing import List, Optional, Any, Dict
+__version__ = "0.5.0"
 TURBO_STEP = 10
 if os.name != 'nt':
     import curses
@@ -24,6 +25,7 @@ except ImportError:
 # --- デバッグ設定 ---
 DEBUG = os.environ.get("TERMA_DEBUG") == "1"
 LOG_FILE_PATH = Path.home() / "terma-debug.log"
+RESUME_FILE_PATH = Path.home() / ".terma_resume.json"
 if DEBUG:
     with open(LOG_FILE_PATH, "w") as f:
         f.write("--- Terma Debug Log ---\n")
@@ -178,6 +180,109 @@ def get_sorted_images(target_dir: Path) -> List[Path]:
     return sorted(images, key=natural_sort_key)
 
 
+def load_resume_data() -> Dict[str, Any]:
+    try:
+        if RESUME_FILE_PATH.exists():
+            with open(RESUME_FILE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        debug(f"Failed to load resume data: {e}")
+    return {}
+
+
+def save_resume_data(data: Dict[str, Any]) -> None:
+    try:
+        with open(RESUME_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+    except Exception as e:
+        debug(f"Failed to save resume data: {e}")
+
+
+def get_resume_state(resume_key: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not resume_key:
+        return None
+    data = load_resume_data()
+    state = data.get(resume_key)
+    return state if isinstance(state, dict) else None
+
+
+def save_resume_state(
+    resume_key: Optional[str],
+    target_dir: Path,
+    images: List[Path],
+    img_idx: int,
+    is_archive: bool,
+    archive_resume_base: Optional[Path] = None,
+) -> None:
+    if not resume_key or not images:
+        return
+    safe_idx = max(0, min(len(images) - 1, img_idx))
+    state: Dict[str, Any] = {
+        "image_name": images[safe_idx].name,
+        "image_index": safe_idx,
+        "is_archive": is_archive,
+    }
+    if is_archive and archive_resume_base:
+        try:
+            state["dir_rel"] = target_dir.resolve().relative_to(archive_resume_base.resolve()).as_posix()
+        except Exception:
+            state["dir_rel"] = "."
+    else:
+        state["dir_path"] = target_dir.resolve().as_posix()
+
+    data = load_resume_data()
+    data[resume_key] = state
+    save_resume_data(data)
+
+
+def find_resume_dir_index(
+    dirs_to_browse: List[Path],
+    state: Optional[Dict[str, Any]],
+    is_archive: bool,
+    archive_resume_base: Optional[Path] = None,
+) -> Optional[int]:
+    if not state:
+        return None
+    if is_archive:
+        saved_rel = state.get("dir_rel")
+        if not isinstance(saved_rel, str) or archive_resume_base is None:
+            return None
+        for i, d in enumerate(dirs_to_browse):
+            try:
+                if d.resolve().relative_to(archive_resume_base.resolve()).as_posix() == saved_rel:
+                    return i
+            except Exception:
+                continue
+    else:
+        saved_dir = state.get("dir_path")
+        if not isinstance(saved_dir, str):
+            return None
+        saved_path = Path(saved_dir)
+        for i, d in enumerate(dirs_to_browse):
+            try:
+                if d.resolve() == saved_path.resolve():
+                    return i
+            except Exception:
+                continue
+    return None
+
+
+def find_resume_image_index(images: List[Path], state: Optional[Dict[str, Any]]) -> int:
+    if not state or not images:
+        return 0
+    image_name = state.get("image_name")
+    if isinstance(image_name, str):
+        for i, image in enumerate(images):
+            if image.name == image_name:
+                return i
+    image_index = state.get("image_index")
+    if isinstance(image_index, int):
+        return max(0, min(len(images) - 1, image_index))
+    return 0
+
+
 def extract_archive(archive_path: Path, extract_to: Path) -> bool:
     # ZIP / CBZ
     try:
@@ -228,10 +333,10 @@ def extract_archive(archive_path: Path, extract_to: Path) -> bool:
 
 
 def extract_nested_archives(root_dir: Path):
-    """アーカイブファイル（zip/cbz）を再帰的に展開する。
+    """アーカイブファイル（zip/cbz/rar/cbr）を再帰的に展開する。
 
     展開後、元のアーカイブファイルは削除される。
-    対応形式: zip, cbz（RAR/TARの入れ子は稀なため対象外）
+    対応形式: zip, cbz, rar, cbr
     """
     archive_exts = {'.zip', '.cbz', '.rar', '.cbr'}
     found = True
@@ -280,7 +385,12 @@ def get_progress_index(total_images: int, percent: int) -> int:
     return max(0, min(total_images - 1, target))
 
 
-def run_app(stdscr=None, target_path: Optional[Path] = None, is_archive: bool = False):
+def run_app(
+    stdscr=None,
+    target_path: Optional[Path] = None,
+    is_archive: bool = False,
+    resume_key: Optional[str] = None,
+):
     """メインアプリケーションループ。stdscr があれば curses、なければ ANSI+msvcrt (Windows) を使用"""
     is_win = os.name == 'nt'
     def get_term_size():
@@ -394,6 +504,7 @@ def run_app(stdscr=None, target_path: Optional[Path] = None, is_archive: bool = 
                     break
             except Exception:
                 break
+        archive_resume_base = initial_dir
 
         # 画像を含むすべてのディレクトリを検索
         extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
@@ -415,6 +526,7 @@ def run_app(stdscr=None, target_path: Optional[Path] = None, is_archive: bool = 
         else:
             dirs_to_browse = [initial_dir]
     else:
+        archive_resume_base = None
         dirs_to_browse = get_sorted_dirs(initial_dir)
 
     try:
@@ -423,6 +535,11 @@ def run_app(stdscr=None, target_path: Optional[Path] = None, is_archive: bool = 
     except (ValueError, StopIteration):
         dir_idx = 0
     img_idx = 0
+    resume_state = get_resume_state(resume_key)
+    resume_dir_idx = find_resume_dir_index(dirs_to_browse, resume_state, is_archive, archive_resume_base)
+    if resume_dir_idx is not None:
+        dir_idx = resume_dir_idx
+        img_idx = find_resume_image_index(get_sorted_images(dirs_to_browse[dir_idx]), resume_state)
     needs_redraw = True
     last_visited_dir = initial_dir
     while 0 <= dir_idx < len(dirs_to_browse):
@@ -452,6 +569,7 @@ def run_app(stdscr=None, target_path: Optional[Path] = None, is_archive: bool = 
                 else:
                     l_name = curr_left.name if curr_left else "END"
                     status = f"DIR: {target_dir.name} | R: {curr_right.name} L: {l_name}"
+                save_resume_state(resume_key, target_dir, images, img_idx, is_archive, archive_resume_base)
                 # ステータス行を表示
                 draw_status(h, w, status)
                 refresh_screen()
@@ -623,6 +741,8 @@ Arguments:
   directory_or_archive    Manga directory or archive (zip/tar/cbz) to view (default: current directory)
   -v, --version           Show version information
   --help                  Show this help message
+Resume:
+  Last viewed positions are saved to ~/.terma_resume.json and restored automatically.
 Controls:
   j/Left/Enter  Next page
   k/l/Right     Previous page
@@ -643,6 +763,7 @@ Controls:
         target_path = Path(sys.argv[1]).absolute()
     else:
         target_path = Path.cwd().absolute()
+    resume_key = target_path.resolve().as_posix()
 
     temp_dir_obj = None
     is_archive = False
@@ -665,9 +786,9 @@ Controls:
         sys.stdout.write('\033[?25l')
         sys.stdout.flush()
         if os.name == 'nt':
-            error_msg = run_app(target_path=target_path, is_archive=is_archive)
+            error_msg = run_app(target_path=target_path, is_archive=is_archive, resume_key=resume_key)
         else:
-            error_msg = curses.wrapper(lambda stdscr: run_app(stdscr, target_path=target_path, is_archive=is_archive))
+            error_msg = curses.wrapper(lambda stdscr: run_app(stdscr, target_path=target_path, is_archive=is_archive, resume_key=resume_key))
         if error_msg:
             print(error_msg)
     finally:
