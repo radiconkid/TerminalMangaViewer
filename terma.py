@@ -10,7 +10,7 @@ import tarfile
 import tempfile
 from pathlib import Path
 from typing import List, Optional
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 TURBO_STEP = 10
 if os.name != 'nt':
     import curses
@@ -226,6 +226,24 @@ def extract_archive(archive_path: Path, extract_to: Path) -> bool:
 
     return False
 
+
+def extract_nested_archives(root_dir: Path):
+    """アーカイブファイル（zip/cbz）を再帰的に展開する。
+
+    展開後、元のアーカイブファイルは削除される。
+    対応形式: zip, cbz（RAR/TARの入れ子は稀なため対象外）
+    """
+    archive_exts = {'.zip', '.cbz', '.rar', '.cbr'}
+    found = True
+    while found:
+        found = False
+        for arch in sorted(root_dir.rglob('*'), key=lambda p: str(p)):
+            if arch.is_file() and arch.suffix.lower() in archive_exts:
+                nested_dir = root_dir / arch.stem
+                nested_dir.mkdir(exist_ok=True)
+                if extract_archive(arch, nested_dir):
+                    arch.unlink()
+                    found = True
 
 
 def should_display_single(images: List[Path], current_idx: int) -> bool:
@@ -594,12 +612,16 @@ def run_app(stdscr=None, target_path: Optional[Path] = None, is_archive: bool = 
     print("全てのファイルの表示を終了しました。")
 def main_cli():
     """Command line entry point for package installation"""
+    if len(sys.argv) > 1 and sys.argv[1] in ("-v", "--version"):
+        print(f"TerMa version {__version__}")
+        return
     # ヘルプオプションの場合は curses を使用せずに直接表示
     if len(sys.argv) > 1 and sys.argv[1] == "--help":
         print(f"""TerMa - Terminal Manga Viewer
 Usage: terma [directory_or_archive]
 Arguments:
   directory_or_archive    Manga directory or archive (zip/tar/cbz) to view (default: current directory)
+  -v, --version           Show version information
   --help                  Show this help message
 Controls:
   j/Left/Enter  Next page
@@ -632,6 +654,7 @@ Controls:
             if extract_archive(target_path, extracted_path):
                 target_path = extracted_path
                 is_archive = True
+                extract_nested_archives(target_path)
             else:
                 print(f"Error: {target_path} is not a directory or a supported archive file.")
                 temp_dir_obj.cleanup()

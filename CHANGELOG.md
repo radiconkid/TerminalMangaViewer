@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. / 本プロジェクトの重要な変更はこのファイルに記録します。
 
+## [0.4.2] - 2026-06-22
+
+### Added / 追加
+- Support `-v` and `--version` command-line arguments to display version information. / バージョン情報を表示するための `-v` および `--version` コマンドライン引数に対応しました。
+- Support recursively extracting nested ZIP/CBZ/RAR/CBR archives inside an opened archive. / 開いたアーカイブ内に含まれるZIP/CBZ/RAR/CBRの入れ子アーカイブを再帰的に展開できるようにしました。
+
 ## [0.4.1] - 2026-06-22
 
 ### Added / 追加
