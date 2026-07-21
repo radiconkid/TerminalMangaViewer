@@ -1,3 +1,4 @@
+![Version](https://img.shields.io/badge/version-v0.6.1-blue.svg)
 # TerMa (TerminalMangaViewer)
 
 > **Ter**minal **Ma**nga Viewer — *"タマ"*

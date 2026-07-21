@@ -1,5 +1,28 @@
 # Changelog / 変更履歴
 
+## [0.6.1] - 2026-07-22 (バグ修正)
+
+画像表示機能の改良と重複画像処理を追加                                                                                                                              
+Sixel対応ターミナルとKitty表示を改善                                                                                                                                
+
+
+
+## [0.6.1] - 2026-07-22 (バグ修正)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Aider v0.86.2
+Model: mistral/mistral-small-latest with ask edit format, infinite output
+Git repo: .git with 9 files
+Repo-map: using 4096 tokens, auto refresh
+
+
+ • 画像表示機能の改良と重複画像処理を追加                                                                                                                              
+ • Sixel対応ターミナルとKitty表示を改善                                                                                                                                
+
+Tokens: 1.9k sent, 38 received. Cost: $0.00012 message, $0.00012 session.
+
+
+
 All notable changes to this project will be documented in this file. / 本プロジェクトの重要な変更はこのファイルに記録します。
 
 ## [0.6.0] - 2026-07-21
