@@ -184,6 +184,145 @@ class WezTermRenderer(ImageRenderer):
             cmd_r = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_r},0", img_r_str]
             debug("Command:", " ".join(cmd_r))
             subprocess.run(cmd_r, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
+class SixelRenderer(ImageRenderer):
+    """Sixel対応ターミナル（Windows Terminal, foot, XTerm等）用レンダラー。
+
+    chafa (推奨) または img2sixel を使用して画像をSixel形式に変換し出力する。
+    """
+    def __init__(self):
+        self._use_chafa = shutil.which("chafa") is not None
+        self._use_img2sixel = shutil.which("img2sixel") is not None
+        debug(f"SixelRenderer: chafa={self._use_chafa}, img2sixel={self._use_img2sixel}")
+
+    def clear(self):
+        # Sixelクリアシーケンス: 画面をクリアしてカーソルを左上に
+        sys.stdout.write('\x1b[2J\x1b[H')
+        sys.stdout.flush()
+
+    def _sixel_convert(self, image_path: Path, cols: int, rows: int) -> Optional[bytes]:
+        """画像をSixelデータに変換して返す。失敗した場合はNone。"""
+        if self._use_chafa:
+            try:
+                # chafa で sixel 出力
+                cmd = [
+                    "chafa", "-f", "sixels",
+                    "--size", f"{cols}x{rows}",
+                    "--optimize", "9",
+                    image_path.absolute().as_posix()
+                ]
+                debug("Sixel chafa cmd:", " ".join(cmd))
+                result = subprocess.run(cmd, capture_output=True, timeout=30)
+                if result.returncode == 0 and result.stdout:
+                    return result.stdout
+                debug(f"Sixel chafa failed: rc={result.returncode}, stderr={result.stderr[:200]}")
+            except Exception as e:
+                debug(f"Sixel chafa error: {e}")
+
+        if self._use_img2sixel:
+            try:
+                cmd = [
+                    "img2sixel",
+                    image_path.absolute().as_posix()
+                ]
+                debug("Sixel img2sixel cmd:", " ".join(cmd))
+                result = subprocess.run(cmd, capture_output=True, timeout=30)
+                if result.returncode == 0 and result.stdout:
+                    return result.stdout
+                debug(f"Sixel img2sixel failed: rc={result.returncode}")
+            except Exception as e:
+                debug(f"Sixel img2sixel error: {e}")
+
+        return None
+
+    def _output_sixel(self, sixel_data: bytes):
+        """Sixelデータを端末に出力し、カーソルを非表示にする。"""
+        sys.stdout.buffer.write(sixel_data)
+        # カーソルを非表示にしてから、ステータス行の後ろ（右下）に移動
+        sys.stdout.write('\033[?25l')
+        sys.stdout.flush()
+
+    def _center_cursor(self, display_cols: int, term_width: int):
+        """画像を中央表示するためにカーソルを絶対位置に移動する。"""
+        if display_cols < term_width:
+            offset = max(0, (term_width - display_cols) // 2)
+            if offset > 0:
+                # 絶対位置指定でカーソルを1行目、offset列目に移動
+                sys.stdout.write(f'\x1b[1;{offset + 1}H')
+                sys.stdout.flush()
+
+    def display_cover(self, image_path: Path, term_width: int, term_height: int):
+        self.display_single(image_path, term_width, term_height)
+
+    def display_single(self, image_path: Path, term_width: int, term_height: int):
+        # カーソルを確実に画面左上に移動
+        sys.stdout.write('\x1b[H')
+        sys.stdout.flush()
+
+        img_height = max(1, term_height - 1)
+        aspect = get_image_aspect(image_path)
+        # 文字セルのアスペクト比を考慮（約2.2）
+        display_cols = max(1, int(img_height * aspect * 2.2))
+        if display_cols > term_width:
+            scale = term_width / display_cols
+            display_cols = term_width
+            img_height = max(1, int(img_height * scale))
+
+        sixel_data = self._sixel_convert(image_path, display_cols, img_height)
+        if sixel_data:
+            self._center_cursor(display_cols, term_width)
+            self._output_sixel(sixel_data)
+        else:
+            debug("Sixel conversion failed, falling back to no-op")
+
+    def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
+        # カーソルを確実に画面左上に移動
+        sys.stdout.write('\x1b[H')
+        sys.stdout.flush()
+
+        if img_left and Image:
+            # PILを使って左右の画像を結合してからSixel変換
+            try:
+                with Image.open(img_left) as im_l, Image.open(img_right) as im_r:
+                    # 高さを揃える
+                    target_h = max(im_l.height, im_r.height)
+                    w_l = int(im_l.width * (target_h / im_l.height))
+                    w_r = int(im_r.width * (target_h / im_r.height))
+                    im_l_resized = im_l.resize((w_l, target_h), Image.LANCZOS)
+                    im_r_resized = im_r.resize((w_r, target_h), Image.LANCZOS)
+                    # 結合
+                    combined_w = w_l + w_r
+                    combined = Image.new("RGB", (combined_w, target_h))
+                    combined.paste(im_l_resized, (0, 0))
+                    combined.paste(im_r_resized, (w_l, 0))
+                    # 一時ファイルに保存してSixel変換
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        tmp_path = tmp.name
+                        combined.save(tmp_path, format="PNG")
+                    try:
+                        img_height = max(1, term_height - 1)
+                        aspect = combined_w / target_h
+                        display_cols = max(1, int(img_height * aspect * 2.2))
+                        if display_cols > term_width:
+                            scale = term_width / display_cols
+                            display_cols = term_width
+                            img_height = max(1, int(img_height * scale))
+                        sixel_data = self._sixel_convert(Path(tmp_path), display_cols, img_height)
+                        if sixel_data:
+                            self._center_cursor(display_cols, term_width)
+                            self._output_sixel(sixel_data)
+                    finally:
+                        try:
+                            os.unlink(tmp_path)
+                        except Exception:
+                            pass
+                    return
+            except Exception as e:
+                debug(f"Sixel spread PIL combine error: {e}")
+
+        # PILが使えない場合や結合に失敗した場合は右側のみ表示
+        self.display_single(img_right, term_width, term_height)
+
+
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', str(s))]
 def get_sorted_dirs(initial_dir: Path) -> List[Path]:
@@ -401,6 +540,83 @@ def get_progress_index(total_images: int, percent: int) -> int:
     return max(0, min(total_images - 1, target))
 
 
+def _is_sixel_terminal() -> bool:
+    """端末がSixelグラフィックスに対応しているかどうかを判定する。
+
+    以下の条件のいずれかを満たす場合にSixel対応とみなす:
+    - TERM が "foot" で始まる (foot terminal)
+    - TERM が "xterm" を含み、かつ COLORTERM が "truecolor" (多くのxterm互換端末)
+    - WT_SESSION が設定されている (Windows Terminal)
+    - TERM_PROGRAM が "mintty" (Cygwin/MSYS2)
+    - TERM が "mlterm" または "contour"
+    - chafa または img2sixel が利用可能 (変換ツールがある)
+    """
+    term = os.environ.get("TERM", "").lower()
+    term_program = os.environ.get("TERM_PROGRAM", "").lower()
+    colorterm = os.environ.get("COLORTERM", "").lower()
+
+    # 明らかにSixel非対応の端末を先に除外
+    if "kitty" in term_program or "KITTY_WINDOW_ID" in os.environ:
+        return False  # Kittyは独自プロトコルを使用
+    if "wezterm" in term_program:
+        return False  # WezTermはimgcatを使用
+
+    # Sixel対応端末の検出
+    if term.startswith("foot"):
+        return True
+    if term == "mlterm":
+        return True
+    if "contour" in term:
+        return True
+    if term_program == "mintty":
+        return True
+    if os.environ.get("WT_SESSION"):
+        return True
+    # xterm互換: TERMにxtermを含み、COLORTERMがtruecolor
+    if "xterm" in term and colorterm == "truecolor":
+        return True
+
+    # 変換ツールの有無で判断（フォールバック）
+    if shutil.which("chafa") is not None or shutil.which("img2sixel") is not None:
+        # より確実な検出のためにDA3制御シーケンスを試行
+        try:
+            import termios
+            import tty
+            import select
+
+            # 端末がttyでなければスキップ
+            if not sys.stdin.isatty():
+                return False
+
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                # DA3 (Device Attributes 3) でSixel対応を問い合わせ
+                sys.stdout.write('\x1b[=q')
+                sys.stdout.flush()
+
+                # 応答を待機 (最大200ms)
+                ready, _, _ = select.select([fd], [], [], 0.2)
+                if ready:
+                    response = os.read(fd, 64)
+                    # 応答に "?4" または "4;" が含まれていればSixel対応
+                    if b'?4' in response or b'4;' in response:
+                        return True
+                    # 応答に "?0" または "0;" が含まれていればSixel非対応
+                    if b'?0' in response or b'0;' in response:
+                        return False
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except Exception:
+            pass
+
+        # DA3が使えない場合、ツールがあるのでSixel対応とみなす
+        return True
+
+    return False
+
+
 def run_app(
     stdscr=None,
     target_path: Optional[Path] = None,
@@ -496,6 +712,8 @@ def run_app(
     # レンダラーの自動選択
     if is_kitty:
         renderer = KittyRenderer()
+    elif _is_sixel_terminal():
+        renderer = SixelRenderer()
     else:
         # デフォルトをWezTermとする
         renderer = WezTermRenderer()
@@ -586,11 +804,11 @@ def run_app(
                     l_name = curr_left.name if curr_left else "END"
                     status = f"DIR: {target_dir.name} | R: {curr_right.name} L: {l_name}"
                 save_resume_state(resume_key, target_dir, images, img_idx, is_archive, archive_resume_base)
-                # ステータス行を表示
+                # 描画前に画像をクリア（Sixel/WezTermの点滅防止のため必要な時のみ）
+                renderer.clear()
+                # ステータス行を表示（clearの後に描画して消えないようにする）
                 draw_status(h, w, status)
                 refresh_screen()
-                # 描画前に画像をクリア（WezTermの点滅防止のため必要な時のみ）
-                renderer.clear()
                 # renderer を使って画像を出力
                 if img_idx == 0:
                     renderer.display_cover(curr_right, w, h)
