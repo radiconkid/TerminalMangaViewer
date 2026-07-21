@@ -3,7 +3,7 @@
 
 > **Ter**minal **Ma**nga Viewer — *"タマ"*
 
-> TerMa は Kitty / WezTerm 向けのターミナル漫画ビューアです。Kitty Graphics Protocol または WezTerm imgcat を使って表紙と見開きを表示し、キーボード操作を中心にマウス操作もサポートします。Python と curses を使って、ターミナル上で完結し、片手で全ての操作を行えることを目標としています。
+> TerMa は **Kitty** / **WezTerm** / **Windows Terminal** / **foot** などに対応したターミナル漫画ビューアです。Kitty Graphics Protocol、WezTerm imgcat、または Sixel グラフィックスを使って表紙と見開きを表示し、キーボード操作を中心にマウス操作もサポートします。Python と curses を使って、ターミナル上で完結し、片手で全ての操作を行えることを目標としています。
 
 ## 日本語版
 
