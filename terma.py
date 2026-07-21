@@ -70,39 +70,55 @@ class KittyRenderer(ImageRenderer):
     def display_cover(self, image_path: Path, term_width: int, term_height: int):
         self.display_single(image_path, term_width, term_height)
     def display_single(self, image_path: Path, term_width: int, term_height: int):
-        img_height = max(1, term_height - 1)
-        cover_width = term_width * 60 // 100
-        cover_x_offset = term_width * 20 // 100
+        img_height = max(1, term_height)
+        # アスペクト比を考慮して幅を計算（上下いっぱいまで表示するため幅制限なし）
+        aspect = get_image_aspect(image_path)
+        display_w = int(img_height * aspect * 2.45)
+        x_offset = (term_width - display_w) // 2
         cmd = [
             "kitty", "+kitten", "icat", "--silent",
-            "--place", f"{cover_width}x{img_height}@{cover_x_offset}x0",
+            "--place", f"{display_w}x{img_height}@{x_offset}x0",
             image_path.absolute().as_posix()
         ]
         debug("Command:", " ".join(cmd))
         subprocess.run(cmd, check=False, stdout=sys.__stdout__)
     def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
-        img_height = max(1, term_height - 1)
-        # 余白計算を改善
-        img_width = term_width * 35 // 100
-        margin = (term_width - (img_width * 2)) // 2
-        # 右側の画像 (img_idx)
-        right_x = margin + img_width
-        cmd_r = [
-            "kitty", "+kitten", "icat", "--silent",
-            "--place", f"{img_width}x{img_height}@{right_x}x0",
-            img_right.absolute().as_posix()
-        ]
-        debug("Command (R):", " ".join(cmd_r))
-        subprocess.run(cmd_r, check=False, stdout=sys.__stdout__)
-        # 左側の画像 (img_idx + 1)
+        img_height = max(1, term_height)
+        # 画像のアスペクト比を考慮した幅計算
+        aspect_r = get_image_aspect(img_right)
+        display_w_r = int(img_height * aspect_r * 2.45)
         if img_left:
+            aspect_l = get_image_aspect(img_left)
+            display_w_l = int(img_height * aspect_l * 2.45)
+            total_w = display_w_r + display_w_l
+            margin = max(0, (term_width - total_w) // 2)
+            # 左側の画像 (img_idx + 1)
             cmd_l = [
                 "kitty", "+kitten", "icat", "--silent",
-                "--place", f"{img_width}x{img_height}@{margin}x0",
+                "--place", f"{display_w_l}x{img_height}@{margin}x0",
                 img_left.absolute().as_posix()
             ]
             debug("Command (L):", " ".join(cmd_l))
             subprocess.run(cmd_l, check=False, stdout=sys.__stdout__)
+            # 右側の画像 (img_idx)
+            right_x = margin + display_w_l
+            cmd_r = [
+                "kitty", "+kitten", "icat", "--silent",
+                "--place", f"{display_w_r}x{img_height}@{right_x}x0",
+                img_right.absolute().as_posix()
+            ]
+            debug("Command (R):", " ".join(cmd_r))
+            subprocess.run(cmd_r, check=False, stdout=sys.__stdout__)
+        else:
+            # 右側1枚のみ（左側がない場合）
+            margin = max(0, (term_width - display_w_r) // 2)
+            cmd_r = [
+                "kitty", "+kitten", "icat", "--silent",
+                "--place", f"{display_w_r}x{img_height}@{margin}x0",
+                img_right.absolute().as_posix()
+            ]
+            debug("Command:", " ".join(cmd_r))
+            subprocess.run(cmd_r, check=False, stdout=sys.__stdout__)
 class WezTermRenderer(ImageRenderer):
     def __init__(self):
         # Windows の場合は wezterm.exe を使用
