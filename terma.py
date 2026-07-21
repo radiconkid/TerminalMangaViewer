@@ -42,7 +42,16 @@ def get_image_aspect(path: Path) -> float:
     try:
         if Image:
             with Image.open(path) as img:
-                return img.width / img.height
+                w, h = img.width, img.height
+                try:
+                    exif = img._getexif()
+                    if exif:
+                        orientation = exif.get(0x0112)
+                        if orientation in (5, 6, 7, 8):
+                            w, h = h, w
+                except Exception:
+                    pass
+                return w / h
     except Exception:
         pass
     return 0.7
@@ -130,37 +139,54 @@ class WezTermRenderer(ImageRenderer):
         # もし wezterm imgcat --clear が使えるならそれを使う
     def _get_aspect(self, path: Path):
         return get_image_aspect(path)
+    def _calc_single_size(self, aspect: float, term_width: int, term_height: int) -> tuple:
+        """Calculate display width and height for a single image.
+
+        Returns (display_w, display_h) in cell units.
+        Leaves at least 2 rows for the status line.
+        """
+        max_h = max(1, term_height - 3)
+        # Calculate width from height using cell aspect ratio (~2.2)
+        display_w = int(max_h * aspect * 2.2)
+        display_h = max_h
+        # If width exceeds terminal, scale down
+        if display_w > term_width - 2:
+            scale = (term_width - 2) / display_w
+            display_w = term_width - 2
+            display_h = max(1, int(display_h * scale))
+        return display_w, display_h
+
     def display_cover(self, image_path: Path, term_width: int, term_height: int):
         self.display_single(image_path, term_width, term_height)
+
     def display_single(self, image_path: Path, term_width: int, term_height: int):
-        target_h = max(1, term_height - 1)
         aspect = self._get_aspect(image_path)
-        # セル比率2.2を考慮した幅計算
-        display_w = int(target_h * aspect * 2.2)
+        display_w, display_h = self._calc_single_size(aspect, term_width, term_height)
         pos_x = max(0, ((term_width - display_w) // 2 - 5))
         env = os.environ.copy()
         env["COLUMNS"], env["LINES"] = str(term_width), str(term_height)
         img_path_str = image_path.absolute().as_posix()
         cmd = [
-            self.wezterm_bin, "imgcat", "--height", str(target_h),
+            self.wezterm_bin, "imgcat", "--height", str(display_h),
             "--position", f"{pos_x},0", img_path_str
         ]
         debug("Command:", " ".join(cmd))
         subprocess.run(cmd, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
     def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
-        target_h = max(1, term_height - 2)
+        max_h = max(1, term_height - 3)
         aspect_r = self._get_aspect(img_right)
-        display_w_r = int(target_h * aspect_r * 2.2)
+        display_w_r = int(max_h * aspect_r * 2.2)
+        display_h = max_h
         if img_left:
             aspect_l = self._get_aspect(img_left)
-            display_w_l = int(target_h * aspect_l * 2.2)
+            display_w_l = int(max_h * aspect_l * 2.2)
             total_w = display_w_r + display_w_l
             # 幅が超える場合は縮小
-            if total_w > term_width:
-                scale = term_width / total_w
-                display_w_l = int(display_w_l * scale)
-                display_w_r = int(display_w_r * scale)
-                target_h = int(target_h * scale)
+            if total_w > term_width - 2:
+                scale = (term_width - 2) / total_w
+                display_w_l = max(1, int(display_w_l * scale))
+                display_w_r = max(1, int(display_w_r * scale))
+                display_h = max(1, int(display_h * scale))
                 total_w = display_w_r + display_w_l
             pos_l = max(0, (term_width - total_w) // 2 - 5)
             pos_r = pos_l + display_w_l
@@ -169,19 +195,23 @@ class WezTermRenderer(ImageRenderer):
             img_l_str = img_left.absolute().as_posix()
             img_r_str = img_right.absolute().as_posix()
             # WezTermは順番に描画
-            cmd_l = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_l},0", img_l_str]
-            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_r},0", img_r_str]
+            cmd_l = [self.wezterm_bin, "imgcat", "--height", str(display_h), "--position", f"{pos_l},0", img_l_str]
+            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(display_h), "--position", f"{pos_r},0", img_r_str]
             debug("Command (L):", " ".join(cmd_l))
             subprocess.run(cmd_l, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
             debug("Command (R):", " ".join(cmd_r))
             subprocess.run(cmd_r, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
         else:
             # 右側1枚のみ（左側がない場合）
+            if display_w_r > term_width - 2:
+                scale = (term_width - 2) / display_w_r
+                display_w_r = term_width - 2
+                display_h = max(1, int(display_h * scale))
             pos_r = max(0, (term_width - display_w_r) // 2)
             env = os.environ.copy()
             env["COLUMNS"], env["LINES"] = str(term_width), str(term_height)
             img_r_str = img_right.absolute().as_posix()
-            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(target_h), "--position", f"{pos_r},0", img_r_str]
+            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(display_h), "--position", f"{pos_r},0", img_r_str]
             debug("Command:", " ".join(cmd_r))
             subprocess.run(cmd_r, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
 class SixelRenderer(ImageRenderer):
@@ -258,13 +288,14 @@ class SixelRenderer(ImageRenderer):
         sys.stdout.write('\x1b[H')
         sys.stdout.flush()
 
-        img_height = max(1, term_height - 1)
+        max_h = max(1, term_height - 3)
         aspect = get_image_aspect(image_path)
         # 文字セルのアスペクト比を考慮（約2.2）
-        display_cols = max(1, int(img_height * aspect * 2.2))
-        if display_cols > term_width:
-            scale = term_width / display_cols
-            display_cols = term_width
+        display_cols = max(1, int(max_h * aspect * 2.2))
+        img_height = max_h
+        if display_cols > term_width - 2:
+            scale = (term_width - 2) / display_cols
+            display_cols = term_width - 2
             img_height = max(1, int(img_height * scale))
 
         sixel_data = self._sixel_convert(image_path, display_cols, img_height)
@@ -278,6 +309,11 @@ class SixelRenderer(ImageRenderer):
         # カーソルを確実に画面左上に移動
         sys.stdout.write('\x1b[H')
         sys.stdout.flush()
+
+        max_h = max(1, term_height - 3)
+        aspect_r = get_image_aspect(img_right)
+        display_cols_r = max(1, int(max_h * aspect_r * 2.2))
+        img_height = max_h
 
         if img_left and Image:
             # PILを使って左右の画像を結合してからSixel変換
@@ -299,12 +335,12 @@ class SixelRenderer(ImageRenderer):
                         tmp_path = tmp.name
                         combined.save(tmp_path, format="PNG")
                     try:
-                        img_height = max(1, term_height - 1)
                         aspect = combined_w / target_h
-                        display_cols = max(1, int(img_height * aspect * 2.2))
-                        if display_cols > term_width:
-                            scale = term_width / display_cols
-                            display_cols = term_width
+                        display_cols = max(1, int(max_h * aspect * 2.2))
+                        img_height = max_h
+                        if display_cols > term_width - 2:
+                            scale = (term_width - 2) / display_cols
+                            display_cols = term_width - 2
                             img_height = max(1, int(img_height * scale))
                         sixel_data = self._sixel_convert(Path(tmp_path), display_cols, img_height)
                         if sixel_data:
@@ -331,8 +367,17 @@ def get_sorted_dirs(initial_dir: Path) -> List[Path]:
     return sorted(dirs, key=natural_sort_key)
 def get_sorted_images(target_dir: Path) -> List[Path]:
     extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"}
+    # Priority order for duplicate stems (higher priority first)
+    priority = {".jpg": 0, ".jpeg": 0, ".png": 1, ".gif": 2, ".webp": 3, ".bmp": 4, ".avif": 5}
     images = [f for f in target_dir.iterdir() if f.is_file() and f.suffix.lower() in extensions]
-    return sorted(images, key=natural_sort_key)
+    # Deduplicate by stem: keep the highest priority file for each stem
+    best: Dict[str, Path] = {}
+    for img in images:
+        stem = img.stem.lower()
+        ext = img.suffix.lower()
+        if stem not in best or priority.get(ext, 99) < priority.get(best[stem].suffix.lower(), 99):
+            best[stem] = img
+    return sorted(best.values(), key=natural_sort_key)
 
 
 def load_resume_data() -> Dict[str, Any]:
@@ -511,13 +556,13 @@ def should_display_single(images: List[Path], current_idx: int) -> bool:
         return False
     if current_idx == len(images) - 1:
         return True
-    if is_landscape_image(images[current_idx]):
-        return True
-    return is_landscape_image(images[current_idx + 1])
+    return False
 
 
 def get_display_step(images: List[Path], current_idx: int) -> int:
-    return 1 if should_display_single(images, current_idx) else 2
+    if current_idx <= 0:
+        return 1
+    return 2
 
 
 def get_previous_page_index(images: List[Path], current_idx: int) -> int:
@@ -815,6 +860,9 @@ def run_app(
                 elif use_single:
                     renderer.display_single(curr_right, w, h)
                 else:
+                    # display_spread(img_right, img_left): img_left is drawn on the left side,
+                    # img_right on the right side. For manga (right-to-left), the lower index
+                    # (earlier page) goes on the right, and the higher index (next page) on the left.
                     renderer.display_spread(curr_right, curr_left, w, h)
                 needs_redraw = False
             # キー入力待ち
@@ -827,8 +875,10 @@ def run_app(
                 needs_redraw = True
                 continue
             step = get_display_step(images, img_idx)
+            debug(f"img_idx={img_idx}, step={step}, num_images={num_images}")
             if key in ('j', curses.KEY_LEFT if stdscr else 'KEY_LEFT', '\n', '\r'):
                 next_idx = img_idx + (1 if img_idx == 0 else step)
+                debug(f"Next: img_idx={img_idx}, step={step}, next_idx={next_idx}, num_images={num_images}")
                 if next_idx >= num_images:
                     if dir_idx < len(dirs_to_browse) - 1:
                         dir_idx += 1
