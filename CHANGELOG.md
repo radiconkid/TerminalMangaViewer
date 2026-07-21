@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. / 本プロジェクトの重要な変更はこのファイルに記録します。
 
+## [0.6.0] - 2026-07-21
+
+### Added / 追加
+- Sixel対応ターミナルへの対応を追加
+- Kittyターミナルの表示を修正
+
 ## [0.5.0] - 2026-06-25
 
 ### Added / 追加
