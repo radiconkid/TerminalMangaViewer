@@ -124,92 +124,6 @@ class KittyRenderer(ImageRenderer):
             ]
             debug("Command:", " ".join(cmd_r))
             subprocess.run(cmd_r, check=False, stdout=sys.__stdout__)
-class WezTermRenderer(ImageRenderer):
-    def __init__(self):
-        # Windows の場合は wezterm.exe を使用
-        self.wezterm_bin = "wezterm.exe" if os.name == "nt" else "wezterm"
-    def clear(self):
-        # 画面全体を消すと点滅が激しいため、何もしないか
-        # 必要な場合はカーソルを左上に移動させるだけにする
-        pass
-        # もし wezterm imgcat --clear が使えるならそれを使う
-    def _get_aspect(self, path: Path):
-        return get_image_aspect(path)
-    def _calc_single_size(self, aspect: float, term_width: int, term_height: int) -> tuple:
-        """Calculate display width and height for a single image.
-
-        Returns (display_w, display_h) in cell units.
-        Leaves at least 2 rows for the status line.
-        """
-        max_h = max(1, term_height - 3)
-        # Calculate width from height using cell aspect ratio (~2.2)
-        display_w = int(max_h * aspect * 2.2)
-        display_h = max_h
-        # If width exceeds terminal, scale down
-        if display_w > term_width - 2:
-            scale = (term_width - 2) / display_w
-            display_w = term_width - 2
-            display_h = max(1, int(display_h * scale))
-        return display_w, display_h
-
-    def display_cover(self, image_path: Path, term_width: int, term_height: int):
-        self.display_single(image_path, term_width, term_height)
-
-    def display_single(self, image_path: Path, term_width: int, term_height: int):
-        aspect = self._get_aspect(image_path)
-        display_w, display_h = self._calc_single_size(aspect, term_width, term_height)
-        pos_x = max(0, ((term_width - display_w) // 2 - 5))
-        env = os.environ.copy()
-        env["COLUMNS"], env["LINES"] = str(term_width), str(term_height)
-        img_path_str = image_path.absolute().as_posix()
-        cmd = [
-            self.wezterm_bin, "imgcat", "--height", str(display_h),
-            "--position", f"{pos_x},0", img_path_str
-        ]
-        debug("Command:", " ".join(cmd))
-        subprocess.run(cmd, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
-    def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
-        max_h = max(1, term_height - 3)
-        aspect_r = self._get_aspect(img_right)
-        display_w_r = int(max_h * aspect_r * 2.2)
-        display_h = max_h
-        if img_left:
-            aspect_l = self._get_aspect(img_left)
-            display_w_l = int(max_h * aspect_l * 2.2)
-            total_w = display_w_r + display_w_l
-            # 幅が超える場合は縮小
-            if total_w > term_width - 2:
-                scale = (term_width - 2) / total_w
-                display_w_l = max(1, int(display_w_l * scale))
-                display_w_r = max(1, int(display_w_r * scale))
-                display_h = max(1, int(display_h * scale))
-                total_w = display_w_r + display_w_l
-            pos_l = max(0, (term_width - total_w) // 2 - 5)
-            pos_r = pos_l + display_w_l
-            env = os.environ.copy()
-            env["COLUMNS"], env["LINES"] = str(term_width), str(term_height)
-            img_l_str = img_left.absolute().as_posix()
-            img_r_str = img_right.absolute().as_posix()
-            # WezTermは順番に描画
-            cmd_l = [self.wezterm_bin, "imgcat", "--height", str(display_h), "--position", f"{pos_l},0", img_l_str]
-            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(display_h), "--position", f"{pos_r},0", img_r_str]
-            debug("Command (L):", " ".join(cmd_l))
-            subprocess.run(cmd_l, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
-            debug("Command (R):", " ".join(cmd_r))
-            subprocess.run(cmd_r, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
-        else:
-            # 右側1枚のみ（左側がない場合）
-            if display_w_r > term_width - 2:
-                scale = (term_width - 2) / display_w_r
-                display_w_r = term_width - 2
-                display_h = max(1, int(display_h * scale))
-            pos_r = max(0, (term_width - display_w_r) // 2)
-            env = os.environ.copy()
-            env["COLUMNS"], env["LINES"] = str(term_width), str(term_height)
-            img_r_str = img_right.absolute().as_posix()
-            cmd_r = [self.wezterm_bin, "imgcat", "--height", str(display_h), "--position", f"{pos_r},0", img_r_str]
-            debug("Command:", " ".join(cmd_r))
-            subprocess.run(cmd_r, check=False, env=env, stdout=sys.__stdout__, stderr=subprocess.DEVNULL)
 class SixelRenderer(ImageRenderer):
     """Sixel対応ターミナル（Windows Terminal, foot, XTerm等）用レンダラー。
 
@@ -603,8 +517,6 @@ def _is_sixel_terminal() -> bool:
     # 明らかにSixel非対応の端末を先に除外
     if "kitty" in term_program or "KITTY_WINDOW_ID" in os.environ:
         return False  # Kittyは独自プロトコルを使用
-    if "wezterm" in term_program:
-        return False  # WezTermはimgcatを使用
 
     # Sixel対応端末の検出
     if term.startswith("foot"):
@@ -741,7 +653,6 @@ def run_app(
     # 環境変数の確認
     term_program = os.environ.get("TERM_PROGRAM", "").lower()
     is_kitty = "kitty" in term_program or "KITTY_WINDOW_ID" in os.environ
-    is_wezterm = "wezterm" in term_program or "WEZTERM_PANE" in os.environ or "WEZTERM_UNIX_SOCKET" in os.environ
     # Curses 特有の初期設定
     if stdscr:
         curses.curs_set(0)
@@ -754,18 +665,16 @@ def run_app(
         os.system('') # Enable ANSI
         sys.stdout.write('\033[?25l') # Hide cursor
 
-    # マウス設定: SGRモードを有効化 (OSに関わらずWezTerm/Kitty等のモダン端末用)
-    sys.stdout.write('\x1b[?1000h\x1b[?1006h')
+    # マウス設定: SGRモード + Win32マウスモードを有効化
+    # 1000: 基本マウスレポート, 1006: SGRフォーマット, 1007: Win32マウスモード(WezTerm/Windows Terminal用)
+    sys.stdout.write('\x1b[?1000h\x1b[?1006h\x1b[?1007h')
     sys.stdout.flush()
 
     # レンダラーの自動選択
     if is_kitty:
         renderer = KittyRenderer()
-    elif _is_sixel_terminal():
-        renderer = SixelRenderer()
     else:
-        # デフォルトをWezTermとする
-        renderer = WezTermRenderer()
+        renderer = SixelRenderer()
     # 引数チェック
     if target_path:
         initial_dir = target_path
@@ -1024,10 +933,10 @@ def run_app(
                     img_idx = next_idx
                 needs_redraw = True
             elif action == 'prev':
-                if cover_mode and img_idx == 0:
+                if img_idx == 0:
                     if dir_idx > 0:
                         dir_idx -= 1
-                        img_idx = 0
+                        img_idx = -1
                         break # 内側ループを抜けて前のディレクトリへ
                 else:
                     img_idx = get_previous_page_index(images, img_idx, cover_mode)
@@ -1108,7 +1017,7 @@ Controls:
                 return
 
         # 初期設定 (マウス有効化、カーソル非表示)
-        sys.stdout.write('\x1b[?1000h\x1b[?1006h')
+        sys.stdout.write('\x1b[?1000h\x1b[?1006h\x1b[?1007h')
         sys.stdout.write('\033[?25l')
         sys.stdout.flush()
         if os.name == 'nt':
