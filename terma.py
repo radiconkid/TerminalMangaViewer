@@ -11,7 +11,7 @@ import tempfile
 import json
 from pathlib import Path
 from typing import List, Optional, Any, Dict
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 TURBO_STEP = 10
 if os.name != 'nt':
     import curses
