@@ -1,4 +1,4 @@
-![Version](https://img.shields.io/badge/version-v0.6.2-blue.svg)
+![Version](https://img.shields.io/badge/version-v0.6.3-blue.svg)
 # TerMa (TerminalMangaViewer)
 
 > **Ter**minal **Ma**nga Viewer — *"タマ"*
@@ -103,6 +103,7 @@ manga/
 | `J` / `Shift` + `←` | 10ページ進む（ターボ） |
 | `K` / `Shift` + `→` | 10ページ戻る（ターボ） |
 | `1`〜`9` | 全体の 10%〜90% の位置へ移動 |
+| `c` | カバーモードの切り替え（表紙表示あり/なし） |
 | `,` | 次の巻へ |
 | `.` | 前の巻へ |
 | `q` / `Q` / `h` | 終了 |
@@ -122,14 +123,20 @@ manga/
 | ターミナル | プロトコル | 検出方法 |
 |------------|-----------|---------|
 | Kitty | Kitty Graphics Protocol（icat） | `KITTY_WINDOW_ID` 環境変数 |
-| WezTerm | imgcat | `WEZTERM_PANE` 環境変数 |
+| WezTerm | imgcat | `WEZTERM_PANE` / `WEZTERM_UNIX_SOCKET` 環境変数 |
+| Windows Terminal | Sixel（chafa / img2sixel） | `WT_SESSION` 環境変数 |
+| foot | Sixel（chafa / img2sixel） | `TERM=foot*` |
+| XTerm互換端末 | Sixel（chafa / img2sixel） | `TERM` に `xterm` を含み `COLORTERM=truecolor` |
+| mintty (Cygwin/MSYS2) | Sixel（chafa / img2sixel） | `TERM_PROGRAM=mintty` |
+| mlterm / Contour | Sixel（chafa / img2sixel） | `TERM` の値で判定 |
 
 tmux 経由でも環境変数による判定が有効です。
+Sixel 非対応の端末では WezTerm の imgcat がフォールバックとして使用されます。
 
 ### デバッグ
 
 ```bash
-MANGA_VIEWER_DEBUG=1 ./terma.py /path/to/manga/volume01
+TERMA_DEBUG=1 ./terma.py /path/to/manga/volume01
 ```
 
 ログは `~/terma-debug.log` に出力されます。
@@ -256,6 +263,7 @@ Resume data is stored in `~/.terma_resume.json`.
 | `J` / `Shift` + `←` | Move forward 10 pages (Turbo) |
 | `K` / `Shift` + `→` | Move backward 10 pages (Turbo) |
 | `1`〜`9` | Jump to 10% through 90% progress |
+| `c` | Toggle cover mode (cover page on/off) |
 | `,` | Move to the next volume |
 | `.` | Move to the previous volume |
 | `q` / `Q` / `h` | Quit |
@@ -275,14 +283,20 @@ Resume data is stored in `~/.terma_resume.json`.
 | Terminal | Protocol | Detection |
 |----------|----------|-----------|
 | Kitty | Kitty Graphics Protocol (`icat`) | `KITTY_WINDOW_ID` environment variable |
-| WezTerm | imgcat | `WEZTERM_PANE` environment variable |
+| WezTerm | imgcat | `WEZTERM_PANE` / `WEZTERM_UNIX_SOCKET` environment variables |
+| Windows Terminal | Sixel (via chafa / img2sixel) | `WT_SESSION` environment variable |
+| foot | Sixel (via chafa / img2sixel) | `TERM=foot*` |
+| XTerm-compatible | Sixel (via chafa / img2sixel) | `TERM` contains `xterm` and `COLORTERM=truecolor` |
+| mintty (Cygwin/MSYS2) | Sixel (via chafa / img2sixel) | `TERM_PROGRAM=mintty` |
+| mlterm / Contour | Sixel (via chafa / img2sixel) | `TERM` value |
 
-The environment variables above also work when the app is launched from tmux.
+Environment variable detection also works when launched from tmux.
+If no Sixel support is detected, WezTerm's imgcat is used as a fallback.
 
 ### Debug
 
 ```bash
-MANGA_VIEWER_DEBUG=1 ./terma.py /path/to/manga/volume01
+TERMA_DEBUG=1 ./terma.py /path/to/manga/volume01
 ```
 
 Logs are written to `~/terma-debug.log`.

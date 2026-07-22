@@ -57,10 +57,6 @@ def get_image_aspect(path: Path) -> float:
     return 0.7
 
 
-def is_landscape_image(path: Path) -> bool:
-    return get_image_aspect(path) > 1.0
-
-
 class ImageRenderer:
     def clear(self):
         pass
@@ -415,6 +411,8 @@ def save_resume_state(
     img_idx: int,
     is_archive: bool,
     archive_resume_base: Optional[Path] = None,
+    cover_mode: bool = True,
+    reading_mode: bool = True,
 ) -> None:
     if not resume_key or not images:
         return
@@ -423,6 +421,8 @@ def save_resume_state(
         "image_name": images[safe_idx].name,
         "image_index": safe_idx,
         "is_archive": is_archive,
+        "cover_mode": cover_mode,
+        "reading_mode": reading_mode,
     }
     if is_archive and archive_resume_base:
         try:
@@ -551,28 +551,28 @@ def extract_nested_archives(root_dir: Path):
                     found = True
 
 
-def should_display_single(images: List[Path], current_idx: int) -> bool:
-    if current_idx <= 0:
+def should_display_single(images: List[Path], current_idx: int, cover_mode: bool = True) -> bool:
+    if cover_mode and current_idx <= 0:
         return False
     if current_idx == len(images) - 1:
         return True
     return False
 
 
-def get_display_step(images: List[Path], current_idx: int) -> int:
-    if current_idx <= 0:
+def get_display_step(images: List[Path], current_idx: int, cover_mode: bool = True) -> int:
+    if cover_mode and current_idx <= 0:
         return 1
     return 2
 
 
-def get_previous_page_index(images: List[Path], current_idx: int) -> int:
-    if current_idx <= 1:
+def get_previous_page_index(images: List[Path], current_idx: int, cover_mode: bool = True) -> int:
+    if cover_mode and current_idx <= 1:
         return 0
-    idx = 1
+    idx = 1 if cover_mode else 0
     slides = [0]
     while idx < current_idx:
         slides.append(idx)
-        step = get_display_step(images, idx)
+        step = get_display_step(images, idx, cover_mode)
         idx += step
     return slides[-1]
 
@@ -623,7 +623,7 @@ def _is_sixel_terminal() -> bool:
 
     # 変換ツールの有無で判断（フォールバック）
     if shutil.which("chafa") is not None or shutil.which("img2sixel") is not None:
-        # より確実な検出のためにDA3制御シーケンスを試行
+        # より確実な検出のためにDECRQSS制御シーケンスを試行
         try:
             import termios
             import tty
@@ -637,26 +637,29 @@ def _is_sixel_terminal() -> bool:
             old_settings = termios.tcgetattr(fd)
             try:
                 tty.setraw(fd)
-                # DA3 (Device Attributes 3) でSixel対応を問い合わせ
-                sys.stdout.write('\x1b[=q')
+                # DECRQSS (Device Control Request Status String) で
+                # 端末のグラフィックス属性（Sixel対応有無）を問い合わせ
+                # 正しいシーケンス: CSI ? q (0x1b 0x5b 0x3f 0x20 0x71)
+                sys.stdout.write('\x1b[?q')
                 sys.stdout.flush()
 
                 # 応答を待機 (最大200ms)
                 ready, _, _ = select.select([fd], [], [], 0.2)
                 if ready:
                     response = os.read(fd, 64)
-                    # 応答に "?4" または "4;" が含まれていればSixel対応
-                    if b'?4' in response or b'4;' in response:
+                    # DECRQSS応答: \x1b[?1;2;4q の "4" がSixel対応を示す
+                    # または \x1b[?1;0q の "0" が非対応を示す
+                    if b'4' in response:
                         return True
-                    # 応答に "?0" または "0;" が含まれていればSixel非対応
-                    if b'?0' in response or b'0;' in response:
+                    # "0" が含まれていればSixel非対応（ただし "4" より優先度を下げる）
+                    if b'0' in response:
                         return False
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         except Exception:
             pass
 
-        # DA3が使えない場合、ツールがあるのでSixel対応とみなす
+        # DECRQSSが使えない場合、ツールがあるのでSixel対応とみなす
         return True
 
     return False
@@ -738,6 +741,7 @@ def run_app(
     # 環境変数の確認
     term_program = os.environ.get("TERM_PROGRAM", "").lower()
     is_kitty = "kitty" in term_program or "KITTY_WINDOW_ID" in os.environ
+    is_wezterm = "wezterm" in term_program or "WEZTERM_PANE" in os.environ or "WEZTERM_UNIX_SOCKET" in os.environ
     # Curses 特有の初期設定
     if stdscr:
         curses.curs_set(0)
@@ -814,7 +818,12 @@ def run_app(
     except (ValueError, StopIteration):
         dir_idx = 0
     img_idx = 0
+    cover_mode = True
+    reading_mode = True  # True = Manga (RTL), False = Comic (LTR)
     resume_state = get_resume_state(resume_key)
+    if resume_state is not None:
+        cover_mode = resume_state.get("cover_mode", True)
+        reading_mode = resume_state.get("reading_mode", True)
     resume_dir_idx = find_resume_dir_index(dirs_to_browse, resume_state, is_archive, archive_resume_base)
     if resume_dir_idx is not None:
         dir_idx = resume_dir_idx
@@ -839,31 +848,42 @@ def run_app(
                 clear_screen()
                 h, w = get_term_size()
                 curr_right = images[img_idx]
-                use_single = should_display_single(images, img_idx)
-                curr_left = None if use_single else images[img_idx + 1] if img_idx + 1 < num_images and img_idx > 0 else None
-                if img_idx == 0:
+                use_single = should_display_single(images, img_idx, cover_mode)
+                curr_left = None if use_single else images[img_idx + 1] if img_idx + 1 < num_images else None
+                mode_indicator = "Cover" if cover_mode and img_idx == 0 else "NoCover" if not cover_mode else ""
+                if cover_mode and img_idx == 0:
                     status = f"DIR: {target_dir.name} | Cover: {curr_right.name}"
                 elif use_single:
                     status = f"DIR: {target_dir.name} | Single: {curr_right.name}"
                 else:
                     l_name = curr_left.name if curr_left else "END"
                     status = f"DIR: {target_dir.name} | R: {curr_right.name} L: {l_name}"
-                save_resume_state(resume_key, target_dir, images, img_idx, is_archive, archive_resume_base)
+                if not cover_mode:
+                    status += " [NoCover]"
+                if reading_mode:
+                    status += " [Manga]"
+                else:
+                    status += " [Comic]"
+                save_resume_state(resume_key, target_dir, images, img_idx, is_archive, archive_resume_base, cover_mode, reading_mode)
                 # 描画前に画像をクリア（Sixel/WezTermの点滅防止のため必要な時のみ）
                 renderer.clear()
                 # ステータス行を表示（clearの後に描画して消えないようにする）
                 draw_status(h, w, status)
                 refresh_screen()
                 # renderer を使って画像を出力
-                if img_idx == 0:
+                if cover_mode and img_idx == 0:
                     renderer.display_cover(curr_right, w, h)
                 elif use_single:
                     renderer.display_single(curr_right, w, h)
                 else:
                     # display_spread(img_right, img_left): img_left is drawn on the left side,
-                    # img_right on the right side. For manga (right-to-left), the lower index
-                    # (earlier page) goes on the right, and the higher index (next page) on the left.
-                    renderer.display_spread(curr_right, curr_left, w, h)
+                    # img_right on the right side.
+                    # Manga mode (RTL): lower index (earlier page) on the right, higher index on the left
+                    # Comic mode (LTR): lower index (earlier page) on the left, higher index on the right
+                    if reading_mode:
+                        renderer.display_spread(curr_right, curr_left, w, h)
+                    else:
+                        renderer.display_spread(curr_left, curr_right, w, h)
                 needs_redraw = False
             # キー入力待ち
             key = get_input()
@@ -874,10 +894,10 @@ def run_app(
             if stdscr and key == curses.KEY_RESIZE:
                 needs_redraw = True
                 continue
-            step = get_display_step(images, img_idx)
+            step = get_display_step(images, img_idx, cover_mode)
             debug(f"img_idx={img_idx}, step={step}, num_images={num_images}")
             if key in ('j', curses.KEY_LEFT if stdscr else 'KEY_LEFT', '\n', '\r'):
-                next_idx = img_idx + (1 if img_idx == 0 else step)
+                next_idx = img_idx + (1 if (cover_mode and img_idx == 0) else step)
                 debug(f"Next: img_idx={img_idx}, step={step}, next_idx={next_idx}, num_images={num_images}")
                 if next_idx >= num_images:
                     if dir_idx < len(dirs_to_browse) - 1:
@@ -898,7 +918,7 @@ def run_app(
                         img_idx = 0
                         break
                 else:
-                    img_idx = get_previous_page_index(images, img_idx)
+                    img_idx = get_previous_page_index(images, img_idx, cover_mode)
                 needs_redraw = True
             elif key in ('K', 'L', curses.KEY_SRIGHT if stdscr else 'KEY_SRIGHT'):
                 # Turbo prev: Jump TURBO_STEP pages back
@@ -910,6 +930,14 @@ def run_app(
             elif key in ('1', '2', '3', '4', '5', '6', '7', '8', '9'):
                 percent = int(key) * 10
                 img_idx = get_progress_index(num_images, percent)
+                needs_redraw = True
+            elif key == 'c':
+                cover_mode = not cover_mode
+                # Reset to first page when toggling to ensure consistent display
+                img_idx = 0
+                needs_redraw = True
+            elif key == 'r':
+                reading_mode = not reading_mode
                 needs_redraw = True
             elif key == ',':
                 if dir_idx < len(dirs_to_browse) - 1:
@@ -973,7 +1001,7 @@ def run_app(
                     debug(f"getmouse error: {e}")
             # アクションの実行とディレクトリ（巻）跨ぎ処理を一本化
             if action == 'next':
-                next_idx = img_idx + (1 if img_idx == 0 else get_display_step(images, img_idx))
+                next_idx = img_idx + (1 if (cover_mode and img_idx == 0) else get_display_step(images, img_idx, cover_mode))
                 if next_idx >= num_images:
                     if dir_idx < len(dirs_to_browse) - 1:
                         dir_idx += 1
@@ -983,13 +1011,13 @@ def run_app(
                     img_idx = next_idx
                 needs_redraw = True
             elif action == 'prev':
-                if img_idx == 0:
+                if cover_mode and img_idx == 0:
                     if dir_idx > 0:
                         dir_idx -= 1
                         img_idx = 0
                         break # 内側ループを抜けて前のディレクトリへ
                 else:
-                    img_idx = get_previous_page_index(images, img_idx)
+                    img_idx = get_previous_page_index(images, img_idx, cover_mode)
                 needs_redraw = True
             elif action == 'first':
                 img_idx = 0
@@ -1034,6 +1062,7 @@ Controls:
   K/Shift+Right Turbo Previous ({TURBO_STEP} pages)
   0            First page (cover)
   1-9          Jump to 10%-90% progress
+  c            Toggle cover mode (first page as cover / start with spread)
   ,            Next volume
   .            Previous volume
   q/Q/h        Quit""")
