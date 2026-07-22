@@ -840,8 +840,8 @@ def run_app(
         if not images:
             dir_idx += 1
             continue
-        if img_idx == -1: # 前のフォルダから戻ってきた場合
-            img_idx = num_images - 2 + (num_images % 2) if num_images > 1 else 0
+        if img_idx == -1: # 前のフォルダから戻ってきた場合（最終ページを開く）
+            img_idx = num_images - 1 if num_images > 0 else 0
         while 0 <= img_idx < num_images:
             action = None # Ensure 'action' is always initialized at the start of each iteration
             if needs_redraw:
@@ -896,7 +896,20 @@ def run_app(
                 continue
             step = get_display_step(images, img_idx, cover_mode)
             debug(f"img_idx={img_idx}, step={step}, num_images={num_images}")
-            if key in ('j', curses.KEY_LEFT if stdscr else 'KEY_LEFT', '\n', '\r'):
+            # Determine key mappings based on reading mode
+            # Manga mode (RTL): Left=next, Right=prev
+            # Comic mode (LTR): Left=prev, Right=next
+            if reading_mode:
+                key_next = ('j', curses.KEY_LEFT if stdscr else 'KEY_LEFT', '\n', '\r')
+                key_prev = ('k', 'l', curses.KEY_RIGHT if stdscr else 'KEY_RIGHT')
+                key_turbo_next = ('J', curses.KEY_SLEFT if stdscr else 'KEY_SLEFT')
+                key_turbo_prev = ('K', 'L', curses.KEY_SRIGHT if stdscr else 'KEY_SRIGHT')
+            else:
+                key_next = ('j', curses.KEY_RIGHT if stdscr else 'KEY_RIGHT', '\n', '\r')
+                key_prev = ('k', 'l', curses.KEY_LEFT if stdscr else 'KEY_LEFT')
+                key_turbo_next = ('J', curses.KEY_SRIGHT if stdscr else 'KEY_SRIGHT')
+                key_turbo_prev = ('K', 'L', curses.KEY_SLEFT if stdscr else 'KEY_SLEFT')
+            if key in key_next:
                 next_idx = img_idx + (1 if (cover_mode and img_idx == 0) else step)
                 debug(f"Next: img_idx={img_idx}, step={step}, next_idx={next_idx}, num_images={num_images}")
                 if next_idx >= num_images:
@@ -907,11 +920,11 @@ def run_app(
                 else:
                     img_idx = next_idx
                 needs_redraw = True
-            elif key in ('J', curses.KEY_SLEFT if stdscr else 'KEY_SLEFT'):
+            elif key in key_turbo_next:
                 # Turbo next: Jump TURBO_STEP pages
                 img_idx = min(num_images - 1, img_idx + TURBO_STEP)
                 needs_redraw = True
-            elif key in ('k', 'l', curses.KEY_RIGHT if stdscr else 'KEY_RIGHT'):
+            elif key in key_prev:
                 if img_idx == 0:
                     if dir_idx > 0:
                         dir_idx -= 1
@@ -920,7 +933,7 @@ def run_app(
                 else:
                     img_idx = get_previous_page_index(images, img_idx, cover_mode)
                 needs_redraw = True
-            elif key in ('K', 'L', curses.KEY_SRIGHT if stdscr else 'KEY_SRIGHT'):
+            elif key in key_turbo_prev:
                 # Turbo prev: Jump TURBO_STEP pages back
                 img_idx = max(0, img_idx - TURBO_STEP)
                 needs_redraw = True
