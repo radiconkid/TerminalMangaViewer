@@ -915,7 +915,7 @@ def run_app(
                 if img_idx == 0:
                     if dir_idx > 0:
                         dir_idx -= 1
-                        img_idx = 0
+                        img_idx = -1
                         break
                 else:
                     img_idx = get_previous_page_index(images, img_idx, cover_mode)
