@@ -3,17 +3,17 @@
 
 > **Ter**minal **Ma**nga Viewer — *"タマ"*
 
-> TerMa は **Kitty** / **WezTerm** / **Windows Terminal** / **foot** などに対応したターミナル漫画ビューアです。Kitty Graphics Protocol、WezTerm imgcat、または Sixel グラフィックスを使って表紙と見開きを表示し、キーボード操作を中心にマウス操作もサポートします。Python と curses を使って、ターミナル上で完結し、片手で全ての操作を行えることを目標としています。
+> TerMa は **Kitty** / **WezTerm** / **Sixel対応ターミナル** などに対応したターミナル漫画ビューアです。Kitty Graphics Protocol、WezTerm imgcat、または Sixel グラフィックスを使って表紙と見開きを表示し、キーボード操作を中心にマウス操作もサポートします。Python と curses を使って、ターミナル上で完結し、片手で全ての操作を行えることを目標としています。
 
 ## 日本語版
 
-Kitty と WezTerm 向けのターミナル漫画ビューアです。
+Kitty、WezTerm、Sixel対応ターミナル向けの漫画ビューアです。
 表紙は中央に表示され、2枚目以降は右綴じの見開き表示を行います。
 
 ### 特徴
 
 - 1枚目は表紙として中央表示し、2枚目以降は右綴じの見開き表示を行います
-- Kitty か WezTerm を自動検出して、対応する画像プロトコルを切り替えます
+- Kitty、WezTerm、Sixel対応ターミナルを自動検出して、対応する画像プロトコルを切り替えます
 - キーボード主体の操作に加え、マウスクリックにも対応します
 - 兄弟ディレクトリを自然順で辿って、次の巻へ移動できます
 - 通常フォルダとアーカイブの前回表示位置を自動で保存・復元します
@@ -33,7 +33,7 @@ Kitty と WezTerm 向けのターミナル漫画ビューアです。
 | 項目 | 内容 |
 |------|------|
 | Python | 3.8 以上 |
-| ターミナル | Kitty または WezTerm |
+| ターミナル | Kitty / WezTerm / Sixel対応ターミナル |
 | Pillow | **強く推奨・標準インストール**。画像のアスペクト比を正確に判定します |
 
 ### インストール
@@ -104,13 +104,12 @@ manga/
 | `K` / `Shift` + `→` | 10ページ戻る（ターボ） |
 | `1`〜`9` | 全体の 10%〜90% の位置へ移動 |
 | `c` | カバーモードの切り替え（表紙表示あり/なし） |
+| `r` | 読書方向の切り替え（右綴じ/左綴じ） |
 | `,` | 次の巻へ |
 | `.` | 前の巻へ |
 | `q` / `Q` / `h` | 終了 |
 
 ### マウス操作
-
-> ⚠️ マウス操作は現在不具合が多く、未完成です。
 
 | 操作 | 動作 |
 |------|------|
@@ -120,18 +119,24 @@ manga/
 
 ### ターミナル対応
 
+**動作確認済み**
+
 | ターミナル | プロトコル | 検出方法 |
 |------------|-----------|---------|
 | Kitty | Kitty Graphics Protocol（icat） | `KITTY_WINDOW_ID` 環境変数 |
-| WezTerm | imgcat | `WEZTERM_PANE` / `WEZTERM_UNIX_SOCKET` 環境変数 |
-| Windows Terminal | Sixel（chafa / img2sixel） | `WT_SESSION` 環境変数 |
-| foot | Sixel（chafa / img2sixel） | `TERM=foot*` |
-| XTerm互換端末 | Sixel（chafa / img2sixel） | `TERM` に `xterm` を含み `COLORTERM=truecolor` |
-| mintty (Cygwin/MSYS2) | Sixel（chafa / img2sixel） | `TERM_PROGRAM=mintty` |
-| mlterm / Contour | Sixel（chafa / img2sixel） | `TERM` の値で判定 |
+| WezTerm | Sixel（chafa） | `WEZTERM_PANE` / `WEZTERM_UNIX_SOCKET` 環境変数 |
+| foot | Sixel（chafa） | `TERM=foot*` |
+| Windows Terminal | Sixel（chafa） | `WT_SESSION` 環境変数 |
+
+**その他対応（理論上動作）**
+
+| ターミナル | プロトコル | 検出方法 |
+|------------|-----------|---------|
+| XTerm互換端末 | Sixel（chafa） | `TERM` に `xterm` を含み `COLORTERM=truecolor` |
+| mintty (Cygwin/MSYS2) | Sixel（chafa） | `TERM_PROGRAM=mintty` |
+| mlterm / Contour | Sixel（chafa） | `TERM` の値で判定 |
 
 tmux 経由でも環境変数による判定が有効です。
-Sixel 非対応の端末では WezTerm の imgcat がフォールバックとして使用されます。
 
 ### デバッグ
 
@@ -166,14 +171,14 @@ Issue・PR ともに歓迎します。
 
 ## English
 
-TerMa is a terminal manga viewer for **Kitty** and **WezTerm**.
+TerMa is a terminal manga viewer for **Kitty**, **WezTerm**, and Sixel-compatible terminals.
 It shows the cover page in the center and, from the second page onward, displays spreads in right-to-left reading order.
 
 ### Features
 
 - The first page is shown as a centered cover page.
 - From the second page onward, the viewer displays spreads using a right-bound layout.
-- Kitty and WezTerm are detected automatically, and the corresponding image protocol is selected.
+- Kitty, WezTerm, and Sixel-compatible terminals are detected automatically, and the corresponding image protocol is selected.
 - The application is keyboard-first and also supports mouse clicks.
 - Sibling directories are traversed in natural sort order so the next volume is discovered automatically.
 - The last viewed position is saved and restored automatically for normal folders and archives.
@@ -193,7 +198,7 @@ It shows the cover page in the center and, from the second page onward, displays
 | Item | Details |
 |------|---------|
 | Python | 3.8 or newer |
-| Terminal | Kitty or WezTerm |
+| Terminal | Kitty, WezTerm, or Sixel-compatible terminals |
 | Pillow | **Strongly recommended and installed by default** for accurate aspect-ratio detection |
 
 ### Installation
@@ -264,13 +269,12 @@ Resume data is stored in `~/.terma_resume.json`.
 | `K` / `Shift` + `→` | Move backward 10 pages (Turbo) |
 | `1`〜`9` | Jump to 10% through 90% progress |
 | `c` | Toggle cover mode (cover page on/off) |
+| `r` | Toggle reading direction (right-to-left / left-to-right) |
 | `,` | Move to the next volume |
 | `.` | Move to the previous volume |
 | `q` / `Q` / `h` | Quit |
 
 ### Mouse Controls
-
-> ⚠️ Mouse support is still incomplete and can be unreliable.
 
 | Action | Behavior |
 |--------|----------|
@@ -284,11 +288,11 @@ Resume data is stored in `~/.terma_resume.json`.
 |----------|----------|-----------|
 | Kitty | Kitty Graphics Protocol (`icat`) | `KITTY_WINDOW_ID` environment variable |
 | WezTerm | imgcat | `WEZTERM_PANE` / `WEZTERM_UNIX_SOCKET` environment variables |
-| Windows Terminal | Sixel (via chafa / img2sixel) | `WT_SESSION` environment variable |
-| foot | Sixel (via chafa / img2sixel) | `TERM=foot*` |
-| XTerm-compatible | Sixel (via chafa / img2sixel) | `TERM` contains `xterm` and `COLORTERM=truecolor` |
-| mintty (Cygwin/MSYS2) | Sixel (via chafa / img2sixel) | `TERM_PROGRAM=mintty` |
-| mlterm / Contour | Sixel (via chafa / img2sixel) | `TERM` value |
+| Windows Terminal | Sixel (chafa) | `WT_SESSION` environment variable |
+| foot | Sixel (chafa) | `TERM=foot*` |
+| XTerm-compatible | Sixel (chafa) | `TERM` contains `xterm` and `COLORTERM=truecolor` |
+| mintty (Cygwin/MSYS2) | Sixel (chafa) | `TERM_PROGRAM=mintty` |
+| mlterm / Contour | Sixel (chafa) | `TERM` value |
 
 Environment variable detection also works when launched from tmux.
 If no Sixel support is detected, WezTerm's imgcat is used as a fallback.
