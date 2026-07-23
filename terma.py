@@ -228,6 +228,24 @@ def get_cell_aspect_ratio() -> float:
     return 2.45
 
 
+def _check_chafa_usable() -> bool:
+    """Check if chafa is installed AND actually runnable (not just present on disk).
+
+    This catches cases where chafa binary exists but shared libraries are missing
+    (e.g. libjxl version mismatch), which would cause a runtime error.
+    """
+    if shutil.which("chafa") is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["chafa", "--version"],
+            capture_output=True, timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 class ImageRenderer:
     def clear(self):
         pass
@@ -244,10 +262,15 @@ class SixelRenderer(ImageRenderer):
     端末に応じて sixel または Kitty ネイティブ形式を自動選択する。
     """
     def __init__(self):
-        self._use_chafa = shutil.which("chafa") is not None
+        self._use_chafa = _check_chafa_usable()
         # Kitty端末かどうかを検出
         term_program = os.environ.get("TERM_PROGRAM", "").lower()
-        self._is_kitty = "kitty" in term_program or "KITTY_WINDOW_ID" in os.environ
+        term = os.environ.get("TERM", "").lower()
+        self._is_kitty = (
+            "kitty" in term_program
+            or "KITTY_WINDOW_ID" in os.environ
+            or "xterm-kitty" in term
+        )
         debug(f"SixelRenderer: chafa={self._use_chafa}, kitty={self._is_kitty}")
 
     def clear(self):
@@ -264,7 +287,8 @@ class SixelRenderer(ImageRenderer):
                 cmd = [
                     "chafa", "-f", fmt,
                     "--size", f"{cols}x{rows}",
-                    "--optimize", "9",
+                    "--symbols", "all",
+                    "--optimize", "0",
                     image_path.absolute().as_posix()
                 ]
                 debug("Sixel chafa cmd:", " ".join(cmd))
