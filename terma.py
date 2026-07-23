@@ -57,6 +57,34 @@ def get_image_aspect(path: Path) -> float:
     return 0.7
 
 
+def get_cell_pixel_size():
+    """端末の1文字セルあたりの物理ピクセルサイズ (幅, 高さ) を取得する。
+    取得できない場合は None を返す。"""
+    try:
+        import fcntl
+        import termios
+        import struct
+        buf = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b'\0' * 8)
+        rows, cols, xpixel, ypixel = struct.unpack('HHHH', buf)
+        if cols == 0 or rows == 0 or xpixel == 0 or ypixel == 0:
+            return None
+        cell_w = xpixel / cols
+        cell_h = ypixel / rows
+        return cell_w, cell_h
+    except Exception:
+        return None
+
+
+def get_cell_aspect_ratio() -> float:
+    """端末の1文字セルのアスペクト比 (高さ/幅) を取得する。
+    取得できない場合はデフォルト値 2.45 を返す。"""
+    cell_size = get_cell_pixel_size()
+    if cell_size:
+        cell_w, cell_h = cell_size
+        return cell_h / cell_w
+    return 2.45
+
+
 class ImageRenderer:
     def clear(self):
         pass
@@ -78,7 +106,8 @@ class KittyRenderer(ImageRenderer):
         img_height = max(1, term_height)
         # アスペクト比を考慮して幅を計算（上下いっぱいまで表示するため幅制限なし）
         aspect = get_image_aspect(image_path)
-        display_w = int(img_height * aspect * 2.45)
+        cell_ratio = get_cell_aspect_ratio()
+        display_w = int(img_height * aspect * cell_ratio)
         x_offset = (term_width - display_w) // 2
         cmd = [
             "kitty", "+kitten", "icat", "--silent",
@@ -91,10 +120,11 @@ class KittyRenderer(ImageRenderer):
         img_height = max(1, term_height)
         # 画像のアスペクト比を考慮した幅計算
         aspect_r = get_image_aspect(img_right)
-        display_w_r = int(img_height * aspect_r * 2.45)
+        cell_ratio = get_cell_aspect_ratio()
+        display_w_r = int(img_height * aspect_r * cell_ratio)
         if img_left:
             aspect_l = get_image_aspect(img_left)
-            display_w_l = int(img_height * aspect_l * 2.45)
+            display_w_l = int(img_height * aspect_l * cell_ratio)
             total_w = display_w_r + display_w_l
             margin = max(0, (term_width - total_w) // 2)
             # 左側の画像 (img_idx + 1)
@@ -127,12 +157,11 @@ class KittyRenderer(ImageRenderer):
 class SixelRenderer(ImageRenderer):
     """Sixel対応ターミナル（Windows Terminal, foot, XTerm等）用レンダラー。
 
-    chafa (推奨) または img2sixel を使用して画像をSixel形式に変換し出力する。
+    chafa を使用して画像をSixel形式に変換し出力する。
     """
     def __init__(self):
         self._use_chafa = shutil.which("chafa") is not None
-        self._use_img2sixel = shutil.which("img2sixel") is not None
-        debug(f"SixelRenderer: chafa={self._use_chafa}, img2sixel={self._use_img2sixel}")
+        debug(f"SixelRenderer: chafa={self._use_chafa}")
 
     def clear(self):
         # Sixelクリアシーケンス: 画面をクリアしてカーソルを左上に
@@ -157,20 +186,6 @@ class SixelRenderer(ImageRenderer):
                 debug(f"Sixel chafa failed: rc={result.returncode}, stderr={result.stderr[:200]}")
             except Exception as e:
                 debug(f"Sixel chafa error: {e}")
-
-        if self._use_img2sixel:
-            try:
-                cmd = [
-                    "img2sixel",
-                    image_path.absolute().as_posix()
-                ]
-                debug("Sixel img2sixel cmd:", " ".join(cmd))
-                result = subprocess.run(cmd, capture_output=True, timeout=30)
-                if result.returncode == 0 and result.stdout:
-                    return result.stdout
-                debug(f"Sixel img2sixel failed: rc={result.returncode}")
-            except Exception as e:
-                debug(f"Sixel img2sixel error: {e}")
 
         return None
 
@@ -200,8 +215,9 @@ class SixelRenderer(ImageRenderer):
 
         max_h = max(1, term_height - 3)
         aspect = get_image_aspect(image_path)
-        # 文字セルのアスペクト比を考慮（約2.45）
-        display_cols = max(1, int(max_h * aspect * 2.45))
+        cell_ratio = get_cell_aspect_ratio()
+        # 文字セルのアスペクト比を考慮
+        display_cols = max(1, int(max_h * aspect * cell_ratio))
         img_height = max_h
         if display_cols > term_width - 2:
             scale = (term_width - 2) / display_cols
@@ -222,7 +238,8 @@ class SixelRenderer(ImageRenderer):
 
         max_h = max(1, term_height - 3)
         aspect_r = get_image_aspect(img_right)
-        display_cols_r = max(1, int(max_h * aspect_r * 2.45))
+        cell_ratio = get_cell_aspect_ratio()
+        display_cols_r = max(1, int(max_h * aspect_r * cell_ratio))
         img_height = max_h
 
         if img_left and Image:
@@ -246,7 +263,7 @@ class SixelRenderer(ImageRenderer):
                         combined.save(tmp_path, format="PNG")
                     try:
                         aspect = combined_w / target_h
-                        display_cols = max(1, int(max_h * aspect * 2.45))
+                        display_cols = max(1, int(max_h * aspect * cell_ratio))
                         img_height = max_h
                         if display_cols > term_width - 2:
                             scale = (term_width - 2) / display_cols
@@ -508,7 +525,7 @@ def _is_sixel_terminal() -> bool:
     - WT_SESSION が設定されている (Windows Terminal)
     - TERM_PROGRAM が "mintty" (Cygwin/MSYS2)
     - TERM が "mlterm" または "contour"
-    - chafa または img2sixel が利用可能 (変換ツールがある)
+    - chafa が利用可能 (変換ツールがある)
     """
     term = os.environ.get("TERM", "").lower()
     term_program = os.environ.get("TERM_PROGRAM", "").lower()
@@ -534,7 +551,7 @@ def _is_sixel_terminal() -> bool:
         return True
 
     # 変換ツールの有無で判断（フォールバック）
-    if shutil.which("chafa") is not None or shutil.which("img2sixel") is not None:
+    if shutil.which("chafa") is not None:
         # より確実な検出のためにDECRQSS制御シーケンスを試行
         try:
             import termios
