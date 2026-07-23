@@ -200,8 +200,8 @@ class SixelRenderer(ImageRenderer):
 
         max_h = max(1, term_height - 3)
         aspect = get_image_aspect(image_path)
-        # 文字セルのアスペクト比を考慮（約2.2）
-        display_cols = max(1, int(max_h * aspect * 2.2))
+        # 文字セルのアスペクト比を考慮（約2.45）
+        display_cols = max(1, int(max_h * aspect * 2.45))
         img_height = max_h
         if display_cols > term_width - 2:
             scale = (term_width - 2) / display_cols
@@ -222,7 +222,7 @@ class SixelRenderer(ImageRenderer):
 
         max_h = max(1, term_height - 3)
         aspect_r = get_image_aspect(img_right)
-        display_cols_r = max(1, int(max_h * aspect_r * 2.2))
+        display_cols_r = max(1, int(max_h * aspect_r * 2.45))
         img_height = max_h
 
         if img_left and Image:
@@ -246,7 +246,7 @@ class SixelRenderer(ImageRenderer):
                         combined.save(tmp_path, format="PNG")
                     try:
                         aspect = combined_w / target_h
-                        display_cols = max(1, int(max_h * aspect * 2.2))
+                        display_cols = max(1, int(max_h * aspect * 2.45))
                         img_height = max_h
                         if display_cols > term_width - 2:
                             scale = (term_width - 2) / display_cols
@@ -595,7 +595,9 @@ def run_app(
         if stdscr:
             stdscr.clear()
         else:
-            os.system('cls' if is_win else 'clear')
+            # ANSI escape sequence to clear screen (avoids os.system() which resets console mode on Windows)
+            sys.stdout.write('\x1b[2J\x1b[H')
+            sys.stdout.flush()
     def refresh_screen():
         if stdscr:
             stdscr.refresh()
@@ -615,6 +617,24 @@ def run_app(
             return chr(key)
         return key
 
+    def _read_byte_with_timeout(timeout_ms):
+        """Read a single byte from stdin with timeout using threading.
+        Returns None on timeout."""
+        import threading
+        result = []
+        def reader():
+            try:
+                b = sys.stdin.buffer.read(1)
+                result.append(b)
+            except:
+                pass
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        t.join(timeout_ms / 1000)
+        if t.is_alive():
+            return None
+        return result[0] if result else None
+
     def get_input(timeout_ms=-1):
         if stdscr:
             if timeout_ms >= 0: stdscr.timeout(timeout_ms)
@@ -624,7 +644,8 @@ def run_app(
             except curses.error:
                 return None
         else:
-            # Windows/msvcrt の入力処理
+            # Windows: sys.stdin.buffer.read(1) で VT シーケンスを読み取る
+            # msvcrt.getch() は VT 入力処理をバイパスするため使用しない
             if timeout_ms >= 0:
                 import time
                 start = time.time()
@@ -632,19 +653,62 @@ def run_app(
                     if (time.time() - start) * 1000 > timeout_ms:
                         return None
                     time.sleep(0.005)
-            ch = msvcrt.getch()
-            if ch == b'\x03': raise KeyboardInterrupt() # Ctrl+C
-            if ch in (b'\x00', b'\xe0'): # 特殊キー (矢印など)
-                ext = msvcrt.getch()
-                if ext == b'K': return 'KEY_LEFT'
-                if ext == b'M': return 'KEY_RIGHT'
-                if ext == b'H': return 'KEY_UP'
-                if ext == b'P': return 'KEY_DOWN'
-                if ext == b's': return 'KEY_SLEFT'  # Shift + Left
-                if ext == b't': return 'KEY_SRIGHT' # Shift + Right
+                ch = sys.stdin.buffer.read(1)
+            else:
+                ch = sys.stdin.buffer.read(1)
+            if not ch:
                 return None
+            if ch == b'\x03': raise KeyboardInterrupt() # Ctrl+C
+            if ch == b'\x1b':
+                # ESC シーケンス: 続くバイトを短いタイムアウトで読み取る
+                # msvcrt.kbhit() は VT シーケンスバイトを検出しないため、
+                # threading を使ってタイムアウト付き読み取りを行う
+                seq = b'\x1b'
+                import time
+                start = time.time()
+                while (time.time() - start) * 1000 < 100:
+                    next_ch = _read_byte_with_timeout(50)
+                    if next_ch:
+                        seq += next_ch
+                        start = time.time()  # バイトが来るたびにタイムアウトをリセット
+                        # SGRマウスシーケンスは終端文字(M/m)まで読み続ける
+                        if seq.startswith(b'\x1b[<') and next_ch in (b'M', b'm'):
+                            break
+                        # 矢印キーやファンクションキーは英字または~で終端
+                        if seq.startswith(b'\x1b[') and next_ch in b'ABCDHPQRS~':
+                            break
+                    else:
+                        break
+                # SGRマウスシーケンス: \x1b[<Cb;Cx;CyM または m
+                if seq.startswith(b'\x1b[<') and seq[-1:] in (b'M', b'm'):
+                    try:
+                        body = seq[3:-1].decode()
+                        btn_code, mx, my = (int(v) for v in body.split(';'))
+                        pressed = seq.endswith(b'M')
+                        is_motion = bool(btn_code & 32)
+                        if is_motion:
+                            return None  # ドラッグ/移動イベントは無視
+                        btn = btn_code & 3
+                        if pressed:
+                            if btn == 0:   # 左クリック
+                                return 'MOUSE_LEFT'
+                            elif btn == 2: # 右クリック
+                                return 'MOUSE_RIGHT'
+                            elif btn == 1: # 中クリック
+                                return 'MOUSE_MIDDLE'
+                    except (ValueError, UnicodeDecodeError):
+                        pass
+                    return None
+                # 矢印キー: \x1b[A, \x1b[B, \x1b[C, \x1b[D
+                if seq == b'\x1b[A': return 'KEY_UP'
+                if seq == b'\x1b[B': return 'KEY_DOWN'
+                if seq == b'\x1b[C': return 'KEY_RIGHT'
+                if seq == b'\x1b[D': return 'KEY_LEFT'
+                # Shift + 矢印: \x1b[1;2D, \x1b[1;2C
+                if seq == b'\x1b[1;2D': return 'KEY_SLEFT'
+                if seq == b'\x1b[1;2C': return 'KEY_SRIGHT'
+                return '\x1b'  # 未知のシーケンスはESCとして扱う
             if ch == b'\r' or ch == b'\n': return '\n'
-            if ch == b'\x1b': return '\x1b'
             try:
                 return ch.decode('utf-8')
             except:
@@ -661,8 +725,7 @@ def run_app(
         curses.noecho()
         curses.mousemask(curses.ALL_MOUSE_EVENTS)
     else:
-        # Windows ANSI 初期化
-        os.system('') # Enable ANSI
+        # Windows: カーソル非表示 (コンソールモードは main_cli で設定済み)
         sys.stdout.write('\033[?25l') # Hide cursor
 
     # マウス設定: SGRモード + Win32マウスモードを有効化
@@ -875,6 +938,12 @@ def run_app(
                 needs_redraw = True
             elif key in ('q', 'Q', 'h'):
                 return
+            elif key == 'MOUSE_LEFT':
+                action = 'next'
+            elif key == 'MOUSE_RIGHT':
+                action = 'prev'
+            elif key == 'MOUSE_MIDDLE':
+                return last_visited_dir
             elif key == '\x1b': # ESC シーケンス (SGRマウス等の手動パース)
                 try:
                     # SSH等の遅延を考慮し、timeoutを少し長めにする
@@ -1017,6 +1086,43 @@ Controls:
                 return
 
         # 初期設定 (マウス有効化、カーソル非表示)
+        # Windows: コンソールモードを設定 (ECHO無効化 + VT入出力有効化)
+        if os.name == 'nt':
+            try:
+                import ctypes
+                from ctypes import wintypes
+                _kernel32 = ctypes.windll.kernel32
+                _STD_INPUT_HANDLE = -10
+                _STD_OUTPUT_HANDLE = -11
+                _ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
+                _ENABLE_ECHO_INPUT = 0x0004
+                _ENABLE_LINE_INPUT = 0x0002
+                _ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+                _ENABLE_PROCESSED_OUTPUT = 0x0001
+                # 入力モード: ECHO無効 + LINE無効 + VT入力有効
+                _h_in = _kernel32.GetStdHandle(_STD_INPUT_HANDLE)
+                _old_in_mode = wintypes.DWORD()
+                _kernel32.GetConsoleMode(_h_in, ctypes.byref(_old_in_mode))
+                _new_in_mode = (
+                    _old_in_mode.value
+                    & ~_ENABLE_LINE_INPUT
+                    & ~_ENABLE_ECHO_INPUT
+                ) | _ENABLE_VIRTUAL_TERMINAL_INPUT
+                if not _kernel32.SetConsoleMode(_h_in, _new_in_mode):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                debug(f"Input console mode: 0x{_old_in_mode.value:08X} -> 0x{_new_in_mode:08X}")
+                # 出力モード: VT処理有効
+                _h_out = _kernel32.GetStdHandle(_STD_OUTPUT_HANDLE)
+                _old_out_mode = wintypes.DWORD()
+                _kernel32.GetConsoleMode(_h_out, ctypes.byref(_old_out_mode))
+                _new_out_mode = _old_out_mode.value | _ENABLE_VIRTUAL_TERMINAL_PROCESSING | _ENABLE_PROCESSED_OUTPUT
+                if not _kernel32.SetConsoleMode(_h_out, _new_out_mode):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                debug(f"Output console mode: 0x{_old_out_mode.value:08X} -> 0x{_new_out_mode:08X}")
+                # 復元用のデータを関数オブジェクトに保存
+                run_app._console_restore = (_kernel32, _h_in, _h_out, _old_in_mode.value, _old_out_mode.value)
+            except Exception as e:
+                debug(f"Windows console mode setup failed: {e}")
         sys.stdout.write('\x1b[?1000h\x1b[?1006h\x1b[?1007h')
         sys.stdout.write('\033[?25l')
         sys.stdout.flush()
@@ -1031,6 +1137,16 @@ Controls:
         sys.stdout.write('\x1b[?1000l\x1b[?1006l')
         sys.stdout.write('\033[?25h')
         sys.stdout.flush()
+        # Windows コンソールモードを元に戻す
+        if os.name == 'nt':
+            try:
+                restore = getattr(run_app, '_console_restore', None)
+                if restore:
+                    _kernel32, _h_in, _h_out, _old_in_mode, _old_out_mode = restore
+                    _kernel32.SetConsoleMode(_h_in, _old_in_mode)
+                    _kernel32.SetConsoleMode(_h_out, _old_out_mode)
+            except Exception as e:
+                debug(f"Windows console mode restore failed: {e}")
         if temp_dir_obj:
             try:
                 temp_dir_obj.cleanup()
