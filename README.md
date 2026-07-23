@@ -35,6 +35,7 @@ Kitty、WezTerm、Sixel対応ターミナル向けの漫画ビューアです。
 | Python | 3.8 以上 |
 | ターミナル | Kitty / WezTerm / Sixel対応ターミナル |
 | Pillow | **強く推奨・標準インストール**。画像のアスペクト比を正確に判定します |
+| chafa | **Kitty/WezTerm以外では必須**。Sixel対応ターミナル（foot, xterm, Windows Terminal等）で必要です |
 
 ### インストール
 
@@ -211,6 +212,7 @@ It shows the cover page in the center and, from the second page onward, displays
 | Python | 3.8 or newer |
 | Terminal | Kitty, WezTerm, or Sixel-compatible terminals |
 | Pillow | **Strongly recommended and installed by default** for accurate aspect-ratio detection |
+| chafa | **Required for non-Kitty/WezTerm terminals**. Needed for Sixel-compatible terminals (foot, xterm, Windows Terminal, etc.) |
 
 ### Installation
 

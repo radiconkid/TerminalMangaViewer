@@ -258,8 +258,9 @@ class ImageRenderer:
 class SixelRenderer(ImageRenderer):
     """Sixel/Kitty対応ターミナル用レンダラー。
 
-    chafa を使用して画像を変換し出力する。
-    端末に応じて sixel または Kitty ネイティブ形式を自動選択する。
+    - Kitty: Kitty Graphics Protocol (icat) を使用。chafa 不要。
+    - WezTerm: imgcat を使用。chafa 不要。
+    - その他 (Sixel): chafa を使用して画像を変換出力。chafa 必須。
     """
     def __init__(self):
         self._use_chafa = _check_chafa_usable()
@@ -271,7 +272,26 @@ class SixelRenderer(ImageRenderer):
             or "KITTY_WINDOW_ID" in os.environ
             or "xterm-kitty" in term
         )
-        debug(f"SixelRenderer: chafa={self._use_chafa}, kitty={self._is_kitty}")
+        # WezTermかどうかを検出
+        self._is_wezterm = bool(
+            os.environ.get("WEZTERM_PANE")
+            or os.environ.get("WEZTERM_UNIX_SOCKET")
+            or "wezterm" in term_program
+            or shutil.which("wezterm") is not None
+        )
+        # Kitty/WezTerm は chafa 不要。それ以外は chafa 必須。
+        self._chafa_required = not (self._is_kitty or self._is_wezterm)
+        # chafa がなく、WezTerm の env var 検出にも失敗した場合、
+        # imgcat エスケープシーケンスを直接プローブして WezTerm かどうかを確認する
+        if self._chafa_required and not self._use_chafa:
+            debug("SixelRenderer: chafa not available and WezTerm not detected via env vars, probing with imgcat...")
+            if self._probe_wezterm_imgcat():
+                self._is_wezterm = True
+                self._chafa_required = False
+                debug("SixelRenderer: imgcat probe succeeded, detected WezTerm!")
+        if self._chafa_required and not self._use_chafa:
+            debug("SixelRenderer: chafa is required but not available!")
+        debug(f"SixelRenderer: chafa={self._use_chafa}, kitty={self._is_kitty}, wezterm={self._is_wezterm}, chafa_required={self._chafa_required}")
 
     def clear(self):
         # Sixelクリアシーケンス: 画面をクリアしてカーソルを左上に
@@ -316,7 +336,7 @@ class SixelRenderer(ImageRenderer):
             except Exception as e:
                 debug(f"Kitty icat fallback error: {e}")
         # WezTerm imgcat
-        if os.environ.get("WEZTERM_PANE") or os.environ.get("WEZTERM_UNIX_SOCKET"):
+        if self._is_wezterm:
             try:
                 subprocess.run(
                     ["wezterm", "imgcat", image_path.absolute().as_posix()],
@@ -327,6 +347,54 @@ class SixelRenderer(ImageRenderer):
             except Exception as e:
                 debug(f"WezTerm imgcat fallback error: {e}")
         return False
+
+    def _probe_wezterm_imgcat(self) -> bool:
+        """Probe the terminal by writing a small test image via the WezTerm/iTerm2
+        imgcat escape sequence directly to stdout.
+
+        WezTerm supports the iTerm2 imgcat protocol natively (no binary needed).
+        If the terminal is WezTerm, it will render the image. Other terminals
+        will simply ignore the escape sequence.
+
+        Returns True if the probe was sent (we assume success since we can't
+        detect the terminal's response), False if an error occurred.
+        """
+        try:
+            # Create a tiny 1x1 PNG in memory
+            # Minimal valid PNG: 8-byte signature + IHDR + IDAT + IEND
+            import struct
+            import zlib
+
+            def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+                chunk = chunk_type + data
+                return struct.pack('>I', len(data)) + chunk + struct.pack('>I', zlib.crc32(chunk) & 0xffffffff)
+
+            # PNG signature
+            png_data = b'\x89PNG\r\n\x1a\n'
+            # IHDR: 1x1 pixel, 8-bit RGB
+            png_data += _png_chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
+            # IDAT: raw pixel data (1 red pixel)
+            raw = b'\x00\xff\x00\x00'  # filter byte + RGB
+            png_data += _png_chunk(b'IDAT', zlib.compress(raw))
+            # IEND
+            png_data += _png_chunk(b'IEND', b'')
+
+            # Base64 encode
+            import base64
+            b64_data = base64.b64encode(png_data).decode('ascii')
+
+            # Write the imgcat escape sequence directly to stdout
+            # Format: ESC ] 1337 ; File = inline=1 ; size=<size> : <base64> BEL
+            size = len(png_data)
+            sys.stdout.buffer.write(
+                f'\x1b]1337;File=inline=1;size={size}:{b64_data}\x07'.encode('ascii')
+            )
+            sys.stdout.flush()
+            debug("_probe_wezterm_imgcat: probe sent successfully")
+            return True
+        except Exception as e:
+            debug(f"_probe_wezterm_imgcat: probe failed: {e}")
+            return False
 
     def _show_no_display_warning(self):
         """Display a warning when no image display method is available."""
@@ -430,6 +498,23 @@ class SixelRenderer(ImageRenderer):
             display_cols = term_width - 2
             img_height = max(1, int(img_height * scale))
 
+        # chafa が利用可能な場合は chafa を優先（高品質変換に対応）
+        if self._use_chafa:
+            sixel_data = self._sixel_convert(image_path, display_cols, img_height)
+            if sixel_data:
+                self._center_cursor(display_cols, term_width)
+                self._output_sixel(sixel_data)
+                return
+            debug("chafa conversion failed, trying native fallback")
+
+        # Kitty/WezTerm: ネイティブプロトコルを使用（chafa がない場合のフォールバック）
+        if self._is_kitty or self._is_wezterm:
+            if not self._fallback_display(image_path, display_cols, img_height):
+                debug("Native display failed for Kitty/WezTerm")
+                self._show_no_display_warning()
+            return
+
+        # その他の端末: chafa 経由で Sixel 変換（再試行）
         sixel_data = self._sixel_convert(image_path, display_cols, img_height)
         if sixel_data:
             self._center_cursor(display_cols, term_width)
@@ -451,7 +536,8 @@ class SixelRenderer(ImageRenderer):
         display_cols_r = max(1, int(max_h * aspect_r * cell_ratio))
         img_height = max_h
 
-        if img_left and Image:
+        # chafa が利用可能な場合は PIL 結合 + chafa を優先（見開き表示に対応）
+        if self._use_chafa and img_left and Image:
             # PILを使って左右の画像を結合してからSixel変換
             try:
                 with Image.open(img_left) as im_l, Image.open(img_right) as im_r:
@@ -482,16 +568,92 @@ class SixelRenderer(ImageRenderer):
                         if sixel_data:
                             self._center_cursor(display_cols, term_width)
                             self._output_sixel(sixel_data)
-                        else:
-                            debug("Sixel spread conversion failed, trying fallback display")
-                            if not self._fallback_display(Path(tmp_path), display_cols, img_height):
-                                debug("Fallback display also failed")
+                            return
+                        debug("Sixel spread conversion failed, trying fallback display")
                     finally:
                         try:
                             os.unlink(tmp_path)
                         except Exception:
                             pass
-                    return
+            except Exception as e:
+                debug(f"Sixel spread PIL combine error: {e}")
+
+        # Kitty/WezTerm で chafa がない場合: PIL 結合 + ネイティブプロトコルで見開き表示
+        if (self._is_kitty or self._is_wezterm) and img_left and Image:
+            try:
+                with Image.open(img_left) as im_l, Image.open(img_right) as im_r:
+                    target_h = max(im_l.height, im_r.height)
+                    w_l = int(im_l.width * (target_h / im_l.height))
+                    w_r = int(im_r.width * (target_h / im_r.height))
+                    im_l_resized = im_l.resize((w_l, target_h), Image.LANCZOS)
+                    im_r_resized = im_r.resize((w_r, target_h), Image.LANCZOS)
+                    combined_w = w_l + w_r
+                    combined = Image.new("RGB", (combined_w, target_h))
+                    combined.paste(im_l_resized, (0, 0))
+                    combined.paste(im_r_resized, (w_l, 0))
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        tmp_path = tmp.name
+                        combined.save(tmp_path, format="PNG")
+                    try:
+                        aspect = combined_w / target_h
+                        display_cols = max(1, int(max_h * aspect * cell_ratio))
+                        img_height = max_h
+                        if display_cols > term_width - 2:
+                            scale = (term_width - 2) / display_cols
+                            display_cols = term_width - 2
+                            img_height = max(1, int(img_height * scale))
+                        # ネイティブプロトコルで結合画像を表示
+                        if self._fallback_display(Path(tmp_path), display_cols, img_height):
+                            return
+                        debug("Native spread display failed")
+                    finally:
+                        try:
+                            os.unlink(tmp_path)
+                        except Exception:
+                            pass
+            except Exception as e:
+                debug(f"PIL combine for native spread error: {e}")
+
+        # Kitty/WezTerm: ネイティブプロトコルで右側のみ表示（最終フォールバック）
+        if self._is_kitty or self._is_wezterm:
+            self.display_single(img_right, term_width, term_height)
+            return
+
+        # その他の端末: chafa 経由で Sixel 変換（再試行）
+        if img_left and Image:
+            try:
+                with Image.open(img_left) as im_l, Image.open(img_right) as im_r:
+                    target_h = max(im_l.height, im_r.height)
+                    w_l = int(im_l.width * (target_h / im_l.height))
+                    w_r = int(im_r.width * (target_h / im_r.height))
+                    im_l_resized = im_l.resize((w_l, target_h), Image.LANCZOS)
+                    im_r_resized = im_r.resize((w_r, target_h), Image.LANCZOS)
+                    combined_w = w_l + w_r
+                    combined = Image.new("RGB", (combined_w, target_h))
+                    combined.paste(im_l_resized, (0, 0))
+                    combined.paste(im_r_resized, (w_l, 0))
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        tmp_path = tmp.name
+                        combined.save(tmp_path, format="PNG")
+                    try:
+                        aspect = combined_w / target_h
+                        display_cols = max(1, int(max_h * aspect * cell_ratio))
+                        img_height = max_h
+                        if display_cols > term_width - 2:
+                            scale = (term_width - 2) / display_cols
+                            display_cols = term_width - 2
+                            img_height = max(1, int(img_height * scale))
+                        sixel_data = self._sixel_convert(Path(tmp_path), display_cols, img_height)
+                        if sixel_data:
+                            self._center_cursor(display_cols, term_width)
+                            self._output_sixel(sixel_data)
+                            return
+                        debug("Sixel spread conversion failed, trying fallback display")
+                    finally:
+                        try:
+                            os.unlink(tmp_path)
+                        except Exception:
+                            pass
             except Exception as e:
                 debug(f"Sixel spread PIL combine error: {e}")
 
@@ -899,7 +1061,8 @@ def run_app(
         # Truncate by display width to handle wide characters (e.g. Japanese)
         max_width = max(0, cols - 2)
         truncated = _truncate_by_width(text, max_width)
-        sys.__stdout__.write(f"\033[{status_line};1H{truncated:<{max_width}}")
+        # Move to beginning of line first (\r), then to status line, then clear line
+        sys.__stdout__.write(f"\r\033[{status_line};1H\033[K{truncated:<{max_width}}")
         sys.__stdout__.flush()
     def normalize_key(key):
         if isinstance(key, int) and 32 <= key <= 126:
@@ -1143,7 +1306,7 @@ def run_app(
                     else:
                         renderer.display_spread(curr_left, curr_right, w, h)
                 # ステータス行を画像の上に重ねて表示
-                if stdscr and not renderer._is_kitty:
+                if stdscr and not renderer._is_kitty and not renderer._is_wezterm:
                     # curses モード (Kitty以外): curses の addstr/refresh で描画
                     try:
                         max_width = max(0, w - 2)
@@ -1156,7 +1319,7 @@ def run_app(
                     # Kitty または Windows (非 curses) モード: sys.__stdout__ に直接書き込み
                     # Kittyでは画像がz=-1にあるため、cursesのrefreshが画像領域をスペースで上書きするのを防ぐ
                     # Kittyではcursesの行管理と実際の端末表示にズレがあるため、offset=-1で調整
-                    offset = 1 if renderer._is_kitty else 0
+                    offset = 1 if renderer._is_kitty or renderer._is_wezterm else 0
                     draw_status(h, w, status, offset)
                 needs_redraw = False
             # キー入力待ち
