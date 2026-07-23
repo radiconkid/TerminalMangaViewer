@@ -208,6 +208,16 @@ def get_cell_pixel_size():
         return None
 
 
+def _is_landscape(image_path: Path) -> bool:
+    """Check if an image is landscape (width > height).
+    Returns True for landscape images that should be displayed as single page."""
+    try:
+        aspect = get_image_aspect(image_path)
+        return aspect > 1.0
+    except Exception:
+        return False
+
+
 def get_cell_aspect_ratio() -> float:
     """端末の1文字セルのアスペクト比 (高さ/幅) を取得する。
     取得できない場合はデフォルト値 2.45 を返す。"""
@@ -227,114 +237,18 @@ class ImageRenderer:
         pass
     def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
         pass
-class KittyRenderer(ImageRenderer):
-    def clear(self):
-        # --silent を追加して不要な出力を抑制
-        cmd = ["kitty", "+kitten", "icat", "--clear", "--silent"]
-        debug("Command:", " ".join(cmd))
-        subprocess.run(cmd, check=False, stdout=sys.__stdout__)
-    def display_cover(self, image_path: Path, term_width: int, term_height: int):
-        self.display_single(image_path, term_width, term_height)
-    def display_single(self, image_path: Path, term_width: int, term_height: int):
-        # ステータス行のために下部を予約
-        img_height = max(1, term_height - 1)
-        # アスペクト比を考慮して幅を計算（上下いっぱいまで表示するため幅制限なし）
-        aspect = get_image_aspect(image_path)
-        cell_ratio = get_cell_aspect_ratio()
-        display_w = int(img_height * aspect * cell_ratio)
-        x_offset = (term_width - display_w) // 2
-        cmd = [
-            "kitty", "+kitten", "icat", "--silent",
-            "--place", f"{display_w}x{img_height}@{x_offset}x0",
-            image_path.absolute().as_posix()
-        ]
-        debug("Command:", " ".join(cmd))
-        subprocess.run(cmd, check=False, stdout=sys.__stdout__)
-    def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
-        # ステータス行のために下部を予約
-        img_height = max(1, term_height - 1)
-        # 画像のアスペクト比を考慮した幅計算
-        aspect_r = get_image_aspect(img_right)
-        cell_ratio = get_cell_aspect_ratio()
-        display_w_r = int(img_height * aspect_r * cell_ratio)
-        if img_left and Image:
-            # PILを使って左右の画像を結合してから1枚の画像として表示
-            try:
-                with Image.open(img_left) as im_l, Image.open(img_right) as im_r:
-                    # 高さを揃える
-                    target_h = max(im_l.height, im_r.height)
-                    w_l = int(im_l.width * (target_h / im_l.height))
-                    w_r = int(im_r.width * (target_h / im_r.height))
-                    im_l_resized = im_l.resize((w_l, target_h), Image.LANCZOS)
-                    im_r_resized = im_r.resize((w_r, target_h), Image.LANCZOS)
-                    # 結合
-                    combined_w = w_l + w_r
-                    combined = Image.new("RGB", (combined_w, target_h))
-                    combined.paste(im_l_resized, (0, 0))
-                    combined.paste(im_r_resized, (w_l, 0))
-                    # 一時ファイルに保存
-                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                        tmp_path = tmp.name
-                        combined.save(tmp_path, format="PNG")
-                    try:
-                        aspect = combined_w / target_h
-                        display_w = int(img_height * aspect * cell_ratio)
-                        x_offset = (term_width - display_w) // 2
-                        cmd = [
-                            "kitty", "+kitten", "icat", "--silent",
-                            "--place", f"{display_w}x{img_height}@{x_offset}x0",
-                            Path(tmp_path).absolute().as_posix()
-                        ]
-                        debug("Command:", " ".join(cmd))
-                        subprocess.run(cmd, check=False, stdout=sys.__stdout__)
-                    finally:
-                        try:
-                            os.unlink(tmp_path)
-                        except Exception:
-                            pass
-                    return
-            except Exception as e:
-                debug(f"Kitty spread PIL combine error: {e}")
-
-        if img_left:
-            # PILなし: 2回のicat呼び出し（Kittyによっては正しく表示されない場合あり）
-            aspect_l = get_image_aspect(img_left)
-            display_w_l = int(img_height * aspect_l * cell_ratio)
-            total_w = display_w_r + display_w_l
-            margin = max(0, (term_width - total_w) // 2)
-            cmd_l = [
-                "kitty", "+kitten", "icat", "--silent",
-                "--place", f"{display_w_l}x{img_height}@{margin}x0",
-                img_left.absolute().as_posix()
-            ]
-            debug("Command (L):", " ".join(cmd_l))
-            subprocess.run(cmd_l, check=False, stdout=sys.__stdout__)
-            right_x = margin + display_w_l
-            cmd_r = [
-                "kitty", "+kitten", "icat", "--silent",
-                "--place", f"{display_w_r}x{img_height}@{right_x}x0",
-                img_right.absolute().as_posix()
-            ]
-            debug("Command (R):", " ".join(cmd_r))
-            subprocess.run(cmd_r, check=False, stdout=sys.__stdout__)
-        else:
-            # 右側1枚のみ（左側がない場合）
-            margin = max(0, (term_width - display_w_r) // 2)
-            cmd_r = [
-                "kitty", "+kitten", "icat", "--silent",
-                "--place", f"{display_w_r}x{img_height}@{margin}x0",
-                img_right.absolute().as_posix()
-            ]
-            debug("Command:", " ".join(cmd_r))
-            subprocess.run(cmd_r, check=False, stdout=sys.__stdout__)
 class SixelRenderer(ImageRenderer):
-    """Sixel対応ターミナル（Windows Terminal, foot, XTerm等）用レンダラー。
+    """Sixel/Kitty対応ターミナル用レンダラー。
 
-    chafa を使用して画像をSixel形式に変換し出力する。
+    chafa を使用して画像を変換し出力する。
+    端末に応じて sixel または Kitty ネイティブ形式を自動選択する。
     """
     def __init__(self):
         self._use_chafa = shutil.which("chafa") is not None
-        debug(f"SixelRenderer: chafa={self._use_chafa}")
+        # Kitty端末かどうかを検出
+        term_program = os.environ.get("TERM_PROGRAM", "").lower()
+        self._is_kitty = "kitty" in term_program or "KITTY_WINDOW_ID" in os.environ
+        debug(f"SixelRenderer: chafa={self._use_chafa}, kitty={self._is_kitty}")
 
     def clear(self):
         # Sixelクリアシーケンス: 画面をクリアしてカーソルを左上に
@@ -342,12 +256,13 @@ class SixelRenderer(ImageRenderer):
         sys.stdout.flush()
 
     def _sixel_convert(self, image_path: Path, cols: int, rows: int) -> Optional[bytes]:
-        """画像をSixelデータに変換して返す。失敗した場合はNone。"""
+        """画像をSixel/Kittyデータに変換して返す。失敗した場合はNone。"""
         if self._use_chafa:
             try:
-                # chafa で sixel 出力
+                # Kittyの場合はネイティブ形式（高品質）、それ以外はsixel形式
+                fmt = "kitty" if self._is_kitty else "sixels"
                 cmd = [
-                    "chafa", "-f", "sixels",
+                    "chafa", "-f", fmt,
                     "--size", f"{cols}x{rows}",
                     "--optimize", "9",
                     image_path.absolute().as_posix()
@@ -364,10 +279,47 @@ class SixelRenderer(ImageRenderer):
 
     def _output_sixel(self, sixel_data: bytes):
         """Sixelデータを端末に出力し、カーソルを非表示にする。"""
+        if self._is_kitty:
+            # Kittyプロトコル: 最初のシーケンスに z=-1 を追加して画像をテキスト背面に配置
+            sixel_data = self._inject_kitty_z_index(sixel_data, -1)
         sys.stdout.buffer.write(sixel_data)
         # カーソルを非表示にしてから、ステータス行の後ろ（右下）に移動
         sys.stdout.write('\033[?25l')
         sys.stdout.flush()
+
+    def _inject_kitty_z_index(self, data: bytes, z: int) -> bytes:
+        """Kittyグラフィックスプロトコルのシーケンスに z-index パラメータを追加する。
+
+        Kittyプロトコル形式: \\x1b_G<params>;<data>\\x1b\\
+        <params> は key=value のカンマ区切りリスト。
+        最初のシーケンスのパラメータに z=<z> を追加する。
+        """
+        # 最初の \x1b_G シーケンスを探す
+        idx = data.find(b'\x1b_G')
+        if idx < 0:
+            return data
+        # パラメータ部分の終端（; または \x1b\\）を探す
+        # 形式: \x1b_G<params>;<data>\x1b\\ または \x1b_G<params>\x1b\\
+        rest = data[idx + 2:]  # \x1b_G の後
+        # パラメータは ; または \x1b\\ で終わる
+        param_end = -1
+        for sep in (b';', b'\x1b\\'):
+            pos = rest.find(sep)
+            if pos >= 0:
+                if param_end < 0 or pos < param_end:
+                    param_end = pos
+        if param_end < 0:
+            return data
+        params_str = rest[:param_end].decode('ascii', errors='replace')
+        # 既に z パラメータがある場合は置き換え、なければ追加
+        if 'z=' in params_str:
+            import re
+            params_str = re.sub(r'z=[^,]*', f'z={z}', params_str)
+        else:
+            params_str = f'{params_str},z={z}'
+        # 置き換え
+        new_data = data[:idx + 2] + params_str.encode('ascii') + rest[param_end:]
+        return new_data
 
     def _center_cursor(self, display_cols: int, term_width: int):
         """画像を中央表示するためにカーソルを絶対位置に移動する。"""
@@ -386,7 +338,7 @@ class SixelRenderer(ImageRenderer):
         sys.stdout.write('\x1b[H')
         sys.stdout.flush()
 
-        max_h = max(1, term_height - 1)
+        max_h = max(1, term_height - 2)
         aspect = get_image_aspect(image_path)
         cell_ratio = get_cell_aspect_ratio()
         # 文字セルのアスペクト比を考慮
@@ -409,7 +361,7 @@ class SixelRenderer(ImageRenderer):
         sys.stdout.write('\x1b[H')
         sys.stdout.flush()
 
-        max_h = max(1, term_height - 1)
+        max_h = max(1, term_height - 2)
         aspect_r = get_image_aspect(img_right)
         cell_ratio = get_cell_aspect_ratio()
         display_cols_r = max(1, int(max_h * aspect_r * cell_ratio))
@@ -655,28 +607,44 @@ def extract_nested_archives(root_dir: Path):
                     found = True
 
 
-def should_display_single(images: List[Path], current_idx: int, cover_mode: bool = True) -> bool:
+def should_display_single(images: List[Path], current_idx: int, cover_mode: bool = True, force_single: bool = False) -> bool:
+    if force_single:
+        return True
     if cover_mode and current_idx <= 0:
         return False
     if current_idx == len(images) - 1:
         return True
+    # Landscape images (width > height) should be displayed as single page
+    if _is_landscape(images[current_idx]):
+        return True
+    # If the next image in a spread would be landscape, display current as single too
+    if current_idx + 1 < len(images) and _is_landscape(images[current_idx + 1]):
+        return True
     return False
 
 
-def get_display_step(images: List[Path], current_idx: int, cover_mode: bool = True) -> int:
+def get_display_step(images: List[Path], current_idx: int, cover_mode: bool = True, force_single: bool = False) -> int:
+    if force_single:
+        return 1
     if cover_mode and current_idx <= 0:
+        return 1
+    # Landscape images are displayed as single page, so advance by 1
+    if _is_landscape(images[current_idx]):
+        return 1
+    # If the next image is landscape, advance by 1
+    if current_idx + 1 < len(images) and _is_landscape(images[current_idx + 1]):
         return 1
     return 2
 
 
-def get_previous_page_index(images: List[Path], current_idx: int, cover_mode: bool = True) -> int:
+def get_previous_page_index(images: List[Path], current_idx: int, cover_mode: bool = True, force_single: bool = False) -> int:
     if cover_mode and current_idx <= 1:
         return 0
     idx = 1 if cover_mode else 0
     slides = [0]
     while idx < current_idx:
         slides.append(idx)
-        step = get_display_step(images, idx, cover_mode)
+        step = get_display_step(images, idx, cover_mode, force_single)
         idx += step
     return slides[-1]
 
@@ -767,6 +735,44 @@ def _is_sixel_terminal() -> bool:
     return False
 
 
+def _ime_off():
+    """Turn off IME (Japanese input) if possible. Tries fcitx5 then ibus."""
+    try:
+        subprocess.run(["fcitx5-remote", "-c"], capture_output=True, timeout=1)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["ibus", "engine", "xkb:us::eng"], capture_output=True, timeout=1)
+    except Exception:
+        pass
+
+
+def _ime_restore():
+    """Restore IME to previous state. Currently a no-op placeholder."""
+    pass
+
+
+
+def _truncate_by_width(text: str, max_width: int) -> str:
+    """Truncate text to fit within max_width columns, accounting for wide characters."""
+    try:
+        import wcwidth
+        result = []
+        width = 0
+        for ch in text:
+            w = wcwidth.wcwidth(ch)
+            if w < 0:
+                w = 0
+            if width + w > max_width:
+                break
+            result.append(ch)
+            width += w
+        return ''.join(result)
+    except ImportError:
+        # Fallback: truncate by character count
+        return text[:max_width]
+
+
 def run_app(
     stdscr=None,
     target_path: Optional[Path] = None,
@@ -793,19 +799,20 @@ def run_app(
             stdscr.refresh()
         else:
             sys.stdout.flush()
-    def draw_status(lines, cols, text):
-        if stdscr:
-            try:
-                stdscr.addstr(lines - 1, 0, text[:cols-1])
-            except curses.error:
-                pass
-        else:
-            # Windows/ANSI: ステータス表示
-            # Use lines-1 (second-to-last line) to prevent terminal auto-scrolling.
-            # Use cols-2 to avoid writing to the very last column, which can
-            # cause some terminals to wrap to a new line.
-            status_line = max(1, lines - 1)
-            sys.stdout.write(f"\033[{status_line};1H{text[:cols-2]:<{cols-2}}\033[{status_line};1H")
+    def draw_status(lines, cols, text, offset=0):
+        # Always use direct ANSI escape to stdout (not curses) for status text,
+        # because Kitty icat writes directly to the terminal and curses loses
+        # track of the cursor position after image output.
+        # Write to the second-to-last line to avoid terminal auto-scroll that
+        # occurs when writing to the very last line.
+        # Use cols-2 to avoid writing to the very last column, which can
+        # cause some terminals to wrap to a new line.
+        status_line = max(1, lines - 2 + offset)
+        # Truncate by display width to handle wide characters (e.g. Japanese)
+        max_width = max(0, cols - 2)
+        truncated = _truncate_by_width(text, max_width)
+        sys.__stdout__.write(f"\033[{status_line};1H{truncated:<{max_width}}")
+        sys.__stdout__.flush()
     def normalize_key(key):
         if isinstance(key, int) and 32 <= key <= 126:
             return chr(key)
@@ -909,8 +916,6 @@ def run_app(
                 return None
     # ターミナル種別の判定
     # 環境変数の確認
-    term_program = os.environ.get("TERM_PROGRAM", "").lower()
-    is_kitty = "kitty" in term_program or "KITTY_WINDOW_ID" in os.environ
     # Curses 特有の初期設定
     if stdscr:
         curses.curs_set(0)
@@ -928,10 +933,8 @@ def run_app(
     sys.stdout.flush()
 
     # レンダラーの自動選択
-    if is_kitty:
-        renderer = KittyRenderer()
-    else:
-        renderer = SixelRenderer()
+    # Kitty でも chafa を使用する（icat のオーバーレイ問題を回避）
+    renderer = SixelRenderer()
     # 引数チェック
     if target_path:
         initial_dir = target_path
@@ -986,6 +989,7 @@ def run_app(
     img_idx = 0
     cover_mode = True
     reading_mode = True  # True = Manga (RTL), False = Comic (LTR)
+    force_single = False  # True = force current page to display as single
     resume_state = get_resume_state(resume_key)
     if resume_state is not None:
         cover_mode = resume_state.get("cover_mode", True)
@@ -1014,7 +1018,7 @@ def run_app(
                 clear_screen()
                 h, w = get_term_size()
                 curr_right = images[img_idx]
-                use_single = should_display_single(images, img_idx, cover_mode)
+                use_single = should_display_single(images, img_idx, cover_mode, force_single)
                 curr_left = None if use_single else images[img_idx + 1] if img_idx + 1 < num_images else None
                 mode_indicator = "Cover" if cover_mode and img_idx == 0 else "NoCover" if not cover_mode else ""
                 if cover_mode and img_idx == 0:
@@ -1026,6 +1030,8 @@ def run_app(
                     status = f"DIR: {target_dir.name} | R: {curr_right.name} L: {l_name}"
                 if not cover_mode:
                     status += " [NoCover]"
+                if force_single:
+                    status += " [Single]"
                 if reading_mode:
                     status += " [Manga]"
                 else:
@@ -1048,9 +1054,22 @@ def run_app(
                         renderer.display_spread(curr_right, curr_left, w, h)
                     else:
                         renderer.display_spread(curr_left, curr_right, w, h)
-                # ステータス行を画像の上に重ねて表示（画像に隠れないようにする）
-                draw_status(h, w, status)
-                refresh_screen()
+                # ステータス行を画像の上に重ねて表示
+                if stdscr and not renderer._is_kitty:
+                    # curses モード (Kitty以外): curses の addstr/refresh で描画
+                    try:
+                        max_width = max(0, w - 2)
+                        truncated = _truncate_by_width(status, max_width)
+                        stdscr.addstr(h - 2, 0, truncated)
+                        stdscr.refresh()
+                    except Exception:
+                        pass
+                else:
+                    # Kitty または Windows (非 curses) モード: sys.__stdout__ に直接書き込み
+                    # Kittyでは画像がz=-1にあるため、cursesのrefreshが画像領域をスペースで上書きするのを防ぐ
+                    # Kittyではcursesの行管理と実際の端末表示にズレがあるため、offset=-1で調整
+                    offset = 1 if renderer._is_kitty else 0
+                    draw_status(h, w, status, offset)
                 needs_redraw = False
             # キー入力待ち
             key = get_input()
@@ -1118,6 +1137,9 @@ def run_app(
                 needs_redraw = True
             elif key == 'r':
                 reading_mode = not reading_mode
+                needs_redraw = True
+            elif key == 's':
+                force_single = not force_single
                 needs_redraw = True
             elif key == ',':
                 if dir_idx < len(dirs_to_browse) - 1:
@@ -1249,6 +1271,8 @@ Controls:
   0            First page (cover)
   1-9          Jump to 10%-90% progress
   c            Toggle cover mode (first page as cover / start with spread)
+  s            Toggle single page mode (force current page as single)
+  r            Toggle reading mode (Manga RTL / Comic LTR)
   ,            Next volume
   .            Previous volume
   q/Q/h        Quit""")
