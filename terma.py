@@ -236,7 +236,8 @@ class KittyRenderer(ImageRenderer):
     def display_cover(self, image_path: Path, term_width: int, term_height: int):
         self.display_single(image_path, term_width, term_height)
     def display_single(self, image_path: Path, term_width: int, term_height: int):
-        img_height = max(1, term_height)
+        # ステータス行のために下部を予約
+        img_height = max(1, term_height - 1)
         # アスペクト比を考慮して幅を計算（上下いっぱいまで表示するため幅制限なし）
         aspect = get_image_aspect(image_path)
         cell_ratio = get_cell_aspect_ratio()
@@ -250,7 +251,8 @@ class KittyRenderer(ImageRenderer):
         debug("Command:", " ".join(cmd))
         subprocess.run(cmd, check=False, stdout=sys.__stdout__)
     def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
-        img_height = max(1, term_height)
+        # ステータス行のために下部を予約
+        img_height = max(1, term_height - 1)
         # 画像のアスペクト比を考慮した幅計算
         aspect_r = get_image_aspect(img_right)
         cell_ratio = get_cell_aspect_ratio()
@@ -346,7 +348,7 @@ class SixelRenderer(ImageRenderer):
         sys.stdout.write('\x1b[H')
         sys.stdout.flush()
 
-        max_h = max(1, term_height - 3)
+        max_h = max(1, term_height - 1)
         aspect = get_image_aspect(image_path)
         cell_ratio = get_cell_aspect_ratio()
         # 文字セルのアスペクト比を考慮
@@ -369,7 +371,7 @@ class SixelRenderer(ImageRenderer):
         sys.stdout.write('\x1b[H')
         sys.stdout.flush()
 
-        max_h = max(1, term_height - 3)
+        max_h = max(1, term_height - 1)
         aspect_r = get_image_aspect(img_right)
         cell_ratio = get_cell_aspect_ratio()
         display_cols_r = max(1, int(max_h * aspect_r * cell_ratio))
