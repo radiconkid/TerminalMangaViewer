@@ -57,9 +57,142 @@ def get_image_aspect(path: Path) -> float:
     return 0.7
 
 
+def _get_cell_pixel_size_win32():
+    """Windows: Win32 API を使って端末の1文字セルあたりの物理ピクセルサイズを取得する。
+    取得できない場合は None を返す。"""
+    try:
+        import ctypes
+        import ctypes.wintypes
+        from ctypes import byref, c_short, c_ushort, c_ulong, c_uint, c_int, Structure, POINTER, sizeof
+
+        class COORD(Structure):
+            _fields_ = [("X", c_short), ("Y", c_short)]
+
+        class SMALL_RECT(Structure):
+            _fields_ = [("Left", c_short), ("Top", c_short), ("Right", c_short), ("Bottom", c_short)]
+
+        class CONSOLE_SCREEN_BUFFER_INFOEX(Structure):
+            _fields_ = [
+                ("cbSize", c_ulong),
+                ("dwSize", COORD),
+                ("dwCursorPosition", COORD),
+                ("wAttributes", c_ushort),
+                ("srWindow", SMALL_RECT),
+                ("dwMaximumWindowSize", COORD),
+                ("wPopupAttributes", c_ushort),
+                ("bFullscreenSupported", ctypes.c_bool),
+                ("ColorTable", c_ulong * 16),
+            ]
+
+        class CONSOLE_FONT_INFOEX(Structure):
+            _fields_ = [
+                ("cbSize", c_ulong),
+                ("nFont", c_ulong),
+                ("dwFontSize", COORD),
+                ("FontFamily", c_uint),
+                ("FontWeight", c_uint),
+                ("FaceName", ctypes.wintypes.WCHAR * 32),
+            ]
+
+        class RECT(Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+        GetStdHandle = kernel32.GetStdHandle
+        GetStdHandle.argtypes = [c_ulong]
+        GetStdHandle.restype = ctypes.c_void_p
+
+        GetConsoleWindow = kernel32.GetConsoleWindow
+        GetConsoleWindow.argtypes = []
+        GetConsoleWindow.restype = ctypes.c_void_p
+
+        GetConsoleScreenBufferInfoEx = kernel32.GetConsoleScreenBufferInfoEx
+        GetConsoleScreenBufferInfoEx.argtypes = [ctypes.c_void_p, POINTER(CONSOLE_SCREEN_BUFFER_INFOEX)]
+        GetConsoleScreenBufferInfoEx.restype = ctypes.c_bool
+
+        GetCurrentConsoleFontEx = kernel32.GetCurrentConsoleFontEx
+        GetCurrentConsoleFontEx.argtypes = [ctypes.c_void_p, ctypes.c_bool, POINTER(CONSOLE_FONT_INFOEX)]
+        GetCurrentConsoleFontEx.restype = ctypes.c_bool
+
+        GetConsoleFontSize = kernel32.GetConsoleFontSize
+        GetConsoleFontSize.argtypes = [ctypes.c_void_p, c_ulong]
+        GetConsoleFontSize.restype = COORD
+
+        GetClientRect = user32.GetClientRect
+        GetClientRect.argtypes = [ctypes.c_void_p, POINTER(RECT)]
+        GetClientRect.restype = ctypes.c_bool
+
+        STD_OUTPUT_HANDLE = -11
+        h = GetStdHandle(STD_OUTPUT_HANDLE)
+        if h is None or h == ctypes.c_void_p(-1).value:
+            return None
+
+        # 1. バッファ情報から文字セル数とウィンドウサイズを取得
+        buf_info = CONSOLE_SCREEN_BUFFER_INFOEX()
+        buf_info.cbSize = sizeof(CONSOLE_SCREEN_BUFFER_INFOEX)
+        if not GetConsoleScreenBufferInfoEx(h, byref(buf_info)):
+            return None
+        cols = buf_info.srWindow.Right - buf_info.srWindow.Left + 1
+        rows = buf_info.srWindow.Bottom - buf_info.srWindow.Top + 1
+
+        # 2. フォント情報から1文字セルのピクセルサイズを取得
+        font_info = CONSOLE_FONT_INFOEX()
+        font_info.cbSize = sizeof(CONSOLE_FONT_INFOEX)
+        if not GetCurrentConsoleFontEx(h, False, byref(font_info)):
+            return None
+
+        cell_w = font_info.dwFontSize.X
+        cell_h = font_info.dwFontSize.Y
+
+        # 3. GetConsoleFontSize で確認 (フォールバック)
+        cell_w2 = GetConsoleFontSize(h, font_info.nFont)
+        cell_h2 = GetConsoleFontSize(h, font_info.nFont)
+        if cell_w2.X > 0 and cell_h2.Y > 0:
+            cell_w, cell_h = cell_w2.X, cell_h2.Y
+
+        # 4. コンソールウィンドウのクライアント領域から実ピクセルサイズを逆算 (最も信頼性が高い)
+        hwnd = GetConsoleWindow()
+        if hwnd:
+            rect = RECT()
+            if GetClientRect(hwnd, ctypes.byref(rect)):
+                client_w = rect.right - rect.left
+                client_h = rect.bottom - rect.top
+                if client_w > 0 and client_h > 0 and cols > 0 and rows > 0:
+                    cell_w_from_client = client_w // cols
+                    cell_h_from_client = client_h // rows
+                    if cell_w_from_client > 0 and cell_h_from_client > 0:
+                        cell_w = cell_w_from_client
+                        cell_h = cell_h_from_client
+
+        if cell_w == 0 and cell_h > 0:
+            cell_w = cell_h // 2
+
+        if cell_w == 0 or cell_h == 0:
+            return None
+
+        return float(cell_w), float(cell_h)
+
+    except Exception:
+        return None
+
+
 def get_cell_pixel_size():
     """端末の1文字セルあたりの物理ピクセルサイズ (幅, 高さ) を取得する。
     取得できない場合は None を返す。"""
+    # Windows: Win32 API 経由で実測
+    if os.name == 'nt':
+        result = _get_cell_pixel_size_win32()
+        if result is not None:
+            return result
+
+    # Unix/Linux: TIOCGWINSZ 経由で取得
     try:
         import fcntl
         import termios
