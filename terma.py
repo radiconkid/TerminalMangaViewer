@@ -277,6 +277,63 @@ class SixelRenderer(ImageRenderer):
 
         return None
 
+    def _fallback_display(self, image_path: Path, display_cols: int, img_height: int) -> bool:
+        """chafaがない場合のフォールバック表示。Kitty icatまたはWezTerm imgcatを試す。"""
+        # Kitty icat
+        if self._is_kitty:
+            try:
+                subprocess.run(
+                    ["kitty", "+kitten", "icat", "--place", f"{display_cols}x{img_height}@0x0",
+                     image_path.absolute().as_posix()],
+                    timeout=30
+                )
+                debug("Fallback: used Kitty icat")
+                return True
+            except Exception as e:
+                debug(f"Kitty icat fallback error: {e}")
+        # WezTerm imgcat
+        if os.environ.get("WEZTERM_PANE") or os.environ.get("WEZTERM_UNIX_SOCKET"):
+            try:
+                subprocess.run(
+                    ["wezterm", "imgcat", image_path.absolute().as_posix()],
+                    timeout=30
+                )
+                debug("Fallback: used WezTerm imgcat")
+                return True
+            except Exception as e:
+                debug(f"WezTerm imgcat fallback error: {e}")
+        return False
+
+    def _show_no_display_warning(self):
+        """Display a warning when no image display method is available."""
+        term = os.environ.get("TERM", "").lower()
+        term_program = os.environ.get("TERM_PROGRAM", "").lower()
+        sys.stdout.write('\x1b[2J\x1b[H')
+        sys.stdout.flush()
+        lines = [
+            "⚠️  No image display method available!",
+            "",
+            "TerMa requires one of the following to display images:",
+            "",
+            "  Option 1: Install chafa (recommended)",
+            f"    $ {'pacman -S chafa' if os.path.exists('/etc/arch-release') else 'apt install chafa' if os.path.exists('/usr/bin/apt') else 'brew install chafa'}",
+            "",
+            "  Option 2: Use a compatible terminal",
+            "    - Kitty (uses built-in icat)",
+            "    - WezTerm (uses built-in imgcat)",
+            "    - foot, mlterm, or xterm with sixel support",
+            "",
+            f"  Current terminal: TERM={term}, TERM_PROGRAM={term_program}",
+            "",
+            "Press any key to exit...",
+        ]
+        h, w = shutil.get_terminal_size()
+        for i, line in enumerate(lines):
+            y = h // 2 - len(lines) // 2 + i
+            if 0 < y < h - 1:
+                sys.stdout.write(f"\033[{y};1H{line:<{w - 1}}")
+        sys.stdout.flush()
+
     def _output_sixel(self, sixel_data: bytes):
         """Sixelデータを端末に出力し、カーソルを非表示にする。"""
         if self._is_kitty:
@@ -354,7 +411,10 @@ class SixelRenderer(ImageRenderer):
             self._center_cursor(display_cols, term_width)
             self._output_sixel(sixel_data)
         else:
-            debug("Sixel conversion failed, falling back to no-op")
+            debug("Sixel conversion failed, trying fallback display")
+            if not self._fallback_display(image_path, display_cols, img_height):
+                debug("Fallback display also failed")
+                self._show_no_display_warning()
 
     def display_spread(self, img_right: Path, img_left: Optional[Path], term_width: int, term_height: int):
         # カーソルを確実に画面左上に移動
@@ -398,6 +458,10 @@ class SixelRenderer(ImageRenderer):
                         if sixel_data:
                             self._center_cursor(display_cols, term_width)
                             self._output_sixel(sixel_data)
+                        else:
+                            debug("Sixel spread conversion failed, trying fallback display")
+                            if not self._fallback_display(Path(tmp_path), display_cols, img_height):
+                                debug("Fallback display also failed")
                     finally:
                         try:
                             os.unlink(tmp_path)

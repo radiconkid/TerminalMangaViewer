@@ -1,4 +1,21 @@
-.PHONY: run install lint format clean typecheck
+.PHONY: help run install lint format clean typecheck
+
+# Show help
+help:
+	@echo "TerMa - Terminal Manga Viewer"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make run ARGS=\"<path>\"    Run the viewer"
+	@echo "  make install              Install dependencies and package"
+	@echo "  make lint                 Lint with ruff"
+	@echo "  make format               Format with ruff"
+	@echo "  make typecheck            Type check with mypy"
+	@echo "  make clean                Clean cache files"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make run                  View current directory"
+	@echo "  make run ARGS=\"~/manga\"   View specific directory"
+	@echo "  make run ARGS=\"archive.cbz\"  View archive file"
 
 # Run the viewer directly (no install needed)
 run:
