@@ -28,3 +28,4 @@ terma = "terma:main_cli"
 
 [tool.setuptools]
 py-modules = ["terma"]
+

@@ -38,42 +38,53 @@ Kitty、WezTerm、Sixel対応ターミナル向けの漫画ビューアです。
 
 ### インストール
 
-#### 1. ソースコードを取得する
+#### ゼロからのインストール手順
 
 ```bash
+# 1. Python 3.8 以上をインストール
+# 2. git をインストール
+# 3. make をインストール（base-devel / build-essential）
+#    Arch Linux:  sudo pacman -S base-devel
+#    Ubuntu:      sudo apt install build-essential
+#    macOS:       xcode-select --install
+
+# 4. リポジトリを取得
 git clone https://github.com/radiconkid/TerminalMangaViewer.git
 cd TerminalMangaViewer
+
+# 5. インストール（uv・venv・Pythonパッケージ・chafa確認を自動実行）
+make install
 ```
 
-#### 2. 標準インストールを行う
+`make install` は以下の処理を自動で行います：
+
+- uv が未インストールなら自動インストール
+- 仮想環境 (venv) の作成
+- Pillow を含む Python パッケージのインストール
+- chafa（画像変換ツール）の有無を確認し、なければインストール方法を表示
+
+#### 手動インストール
 
 ```bash
 python3 -m pip install Pillow
 python3 -m pip install .
 ```
 
-`pip install .` では Pillow が標準で入るため、通常はこの手順で十分です。
-`pipx install .` を使う場合も、Pillow は標準インストールとして含まれます。
+#### ビルド済み実行ファイル（GitHub Releases）
 
-#### 3. そのまま実行する
-
-```bash
-python3 terma.py /path/to/manga/volume01
-```
-
-#### 4. pipx でインストールする
+各OS向けのスタンドアロン実行ファイルを [Releases](https://github.com/radiconkid/TerminalMangaViewer/releases) で配布しています。
+Python 環境がなくてもダウンロードしてそのまま実行できます。
 
 ```bash
-pipx install .
+# Linux / macOS
+./terma-linux-x86_64 /path/to/manga
+
+# Windows
+terma-windows-x86_64.exe C:\path\to\manga
 ```
 
-#### 5. pipx の更新・再インストール
-
-```bash
-pipx upgrade terma
-pipx reinstall terma
-pipx install . --force
-```
+> **注意**: chafa は別途インストールが必要です。
+> 実行ファイルに含まれていないため、お使いのOSのパッケージマネージャでインストールしてください。
 
 ### 使い方
 
