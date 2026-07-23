@@ -753,17 +753,17 @@ def run_app(
     def refresh_screen():
         if stdscr:
             stdscr.refresh()
-        else:
-            sys.stdout.flush()
+        # Always flush stdout to ensure ANSI escape sequences (e.g. from draw_status)
+        # are sent to the terminal immediately, even when curses is active.
+        sys.stdout.flush()
     def draw_status(lines, cols, text):
-        if stdscr:
-            try:
-                stdscr.addstr(lines - 1, 0, text[:cols-1])
-            except curses.error:
-                pass
-        else:
-            # Windows/ANSI: ステータス表示
-            sys.stdout.write(f"\033[{lines};1H{text[:cols-1]:<{cols-1}}")
+        # Always use ANSI escape sequences for status bar positioning,
+        # regardless of curses availability. This avoids cursor position
+        # issues caused by mixing direct stdout writes (sixel/image output)
+        # with curses internal state tracking.
+        # Use cols-2 to avoid writing to the very last column, which can
+        # cause some terminals to wrap to a new line.
+        sys.stdout.write(f"\033[{lines};1H{text[:cols-2]:<{cols-2}}\033[{lines};1H")
     def normalize_key(key):
         if isinstance(key, int) and 32 <= key <= 126:
             return chr(key)
@@ -991,10 +991,8 @@ def run_app(
                 save_resume_state(resume_key, target_dir, images, img_idx, is_archive, archive_resume_base, cover_mode, reading_mode)
                 # 描画前に画像をクリア（Sixel/WezTermの点滅防止のため必要な時のみ）
                 renderer.clear()
-                # ステータス行を表示（clearの後に描画して消えないようにする）
-                draw_status(h, w, status)
                 refresh_screen()
-                # renderer を使って画像を出力
+                # renderer を使って画像を出力（先に画像を描画）
                 if cover_mode and img_idx == 0:
                     renderer.display_cover(curr_right, w, h)
                 elif use_single:
@@ -1008,6 +1006,9 @@ def run_app(
                         renderer.display_spread(curr_right, curr_left, w, h)
                     else:
                         renderer.display_spread(curr_left, curr_right, w, h)
+                # ステータス行を画像の上に重ねて表示（画像に隠れないようにする）
+                draw_status(h, w, status)
+                refresh_screen()
                 needs_redraw = False
             # キー入力待ち
             key = get_input()
