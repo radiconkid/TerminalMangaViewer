@@ -257,12 +257,51 @@ class KittyRenderer(ImageRenderer):
         aspect_r = get_image_aspect(img_right)
         cell_ratio = get_cell_aspect_ratio()
         display_w_r = int(img_height * aspect_r * cell_ratio)
+        if img_left and Image:
+            # PILを使って左右の画像を結合してから1枚の画像として表示
+            try:
+                with Image.open(img_left) as im_l, Image.open(img_right) as im_r:
+                    # 高さを揃える
+                    target_h = max(im_l.height, im_r.height)
+                    w_l = int(im_l.width * (target_h / im_l.height))
+                    w_r = int(im_r.width * (target_h / im_r.height))
+                    im_l_resized = im_l.resize((w_l, target_h), Image.LANCZOS)
+                    im_r_resized = im_r.resize((w_r, target_h), Image.LANCZOS)
+                    # 結合
+                    combined_w = w_l + w_r
+                    combined = Image.new("RGB", (combined_w, target_h))
+                    combined.paste(im_l_resized, (0, 0))
+                    combined.paste(im_r_resized, (w_l, 0))
+                    # 一時ファイルに保存
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        tmp_path = tmp.name
+                        combined.save(tmp_path, format="PNG")
+                    try:
+                        aspect = combined_w / target_h
+                        display_w = int(img_height * aspect * cell_ratio)
+                        x_offset = (term_width - display_w) // 2
+                        cmd = [
+                            "kitty", "+kitten", "icat", "--silent",
+                            "--place", f"{display_w}x{img_height}@{x_offset}x0",
+                            Path(tmp_path).absolute().as_posix()
+                        ]
+                        debug("Command:", " ".join(cmd))
+                        subprocess.run(cmd, check=False, stdout=sys.__stdout__)
+                    finally:
+                        try:
+                            os.unlink(tmp_path)
+                        except Exception:
+                            pass
+                    return
+            except Exception as e:
+                debug(f"Kitty spread PIL combine error: {e}")
+
         if img_left:
+            # PILなし: 2回のicat呼び出し（Kittyによっては正しく表示されない場合あり）
             aspect_l = get_image_aspect(img_left)
             display_w_l = int(img_height * aspect_l * cell_ratio)
             total_w = display_w_r + display_w_l
             margin = max(0, (term_width - total_w) // 2)
-            # 左側の画像 (img_idx + 1)
             cmd_l = [
                 "kitty", "+kitten", "icat", "--silent",
                 "--place", f"{display_w_l}x{img_height}@{margin}x0",
@@ -270,7 +309,6 @@ class KittyRenderer(ImageRenderer):
             ]
             debug("Command (L):", " ".join(cmd_l))
             subprocess.run(cmd_l, check=False, stdout=sys.__stdout__)
-            # 右側の画像 (img_idx)
             right_x = margin + display_w_l
             cmd_r = [
                 "kitty", "+kitten", "icat", "--silent",
@@ -753,17 +791,21 @@ def run_app(
     def refresh_screen():
         if stdscr:
             stdscr.refresh()
-        # Always flush stdout to ensure ANSI escape sequences (e.g. from draw_status)
-        # are sent to the terminal immediately, even when curses is active.
-        sys.stdout.flush()
+        else:
+            sys.stdout.flush()
     def draw_status(lines, cols, text):
-        # Always use ANSI escape sequences for status bar positioning,
-        # regardless of curses availability. This avoids cursor position
-        # issues caused by mixing direct stdout writes (sixel/image output)
-        # with curses internal state tracking.
-        # Use cols-2 to avoid writing to the very last column, which can
-        # cause some terminals to wrap to a new line.
-        sys.stdout.write(f"\033[{lines};1H{text[:cols-2]:<{cols-2}}\033[{lines};1H")
+        if stdscr:
+            try:
+                stdscr.addstr(lines - 1, 0, text[:cols-1])
+            except curses.error:
+                pass
+        else:
+            # Windows/ANSI: ステータス表示
+            # Use lines-1 (second-to-last line) to prevent terminal auto-scrolling.
+            # Use cols-2 to avoid writing to the very last column, which can
+            # cause some terminals to wrap to a new line.
+            status_line = max(1, lines - 1)
+            sys.stdout.write(f"\033[{status_line};1H{text[:cols-2]:<{cols-2}}\033[{status_line};1H")
     def normalize_key(key):
         if isinstance(key, int) and 32 <= key <= 126:
             return chr(key)
